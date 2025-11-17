@@ -91,6 +91,7 @@ def continuous_unlearn_sparsity(args):
                 # 从当前数据集中移除A部分
                 if isinstance(current_dataset, ConcatDataset):
                     # 如果current_dataset是ConcatDataset，只保留第一部分（非A数据）
+                    forget_set=data_A
                     current_dataset = current_dataset.datasets[0]
                 else:
                     # 如果current_dataset不包含A，说明A已经被移除了，直接使用

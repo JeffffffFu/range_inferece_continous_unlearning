@@ -176,9 +176,9 @@ def get_gradient_norm(model,target_m,args):
 def save_output(shadow_or_target,args,original_model,unlearned_model,forget_set,retain_set,test_set,shadow_um,t,k=-1):
 
     if k!=-1:
-        save_path = os.getcwd() + f"/save/{args['U_method']}/{args['net_name']}/{args['dataset_name']}/{args['proportion_of_group_unlearn']}/{shadow_or_target}/{t}/{k}"
+        save_path = os.getcwd() + f"/save2/{args['U_method']}/{args['net_name']}/{args['dataset_name']}/{args['proportion_of_group_unlearn']}/{shadow_or_target}/{t}/{k}"
     else:
-        save_path = os.getcwd() + f"/save/{args['U_method']}/{args['net_name']}/{args['dataset_name']}/{args['proportion_of_group_unlearn']}/{shadow_or_target}/{t}/"
+        save_path = os.getcwd() + f"/save2/{args['U_method']}/{args['net_name']}/{args['dataset_name']}/{args['proportion_of_group_unlearn']}/{shadow_or_target}/{t}/"
     os.makedirs(save_path, exist_ok=True)
     #target_list=['target','well-over','well-well','over-over','over-well','high_conf','low_conf','low_entropy','high_entropy','low_asr','high_asr','random','dp_0.5','dp_1.0','dp_1.5','dp_2.0','dp_0.69','dp_0.96','in','out']
     target_list=['shadow']

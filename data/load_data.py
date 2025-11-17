@@ -197,7 +197,6 @@ def get_data(name, augment=True, model_name=None, **kwargs):
         train_set, test_set
     """
     load_path=os.getcwd()+'/data'
-    
     # 获取对应的tokenizer名称
     tokenizer_name = get_tokenizer_name(model_name)
     if name == "cifar10":
@@ -406,15 +405,28 @@ def get_data(name, augment=True, model_name=None, **kwargs):
             def filter_valid(example):
                 return 1 <= example['label'] <= 5
             
+            # 过滤无效样本（label不在1-5范围内的样本）
+            train_before_filter = len(dataset['train'])
+            validation_before_filter = len(dataset['validation'])
+            test_before_filter = len(dataset['test'])
+            
             dataset['train'] = dataset['train'].filter(filter_valid)
             dataset['validation'] = dataset['validation'].filter(filter_valid)
             dataset['test'] = dataset['test'].filter(filter_valid)
             
+            train_after_filter = len(dataset['train'])
+            validation_after_filter = len(dataset['validation'])
+            test_after_filter = len(dataset['test'])
+            
+            print(f"过滤后训练集大小: {train_after_filter} (过滤掉 {train_before_filter - train_after_filter} 个无效样本)")
+            print(f"过滤后验证集大小: {validation_after_filter} (过滤掉 {validation_before_filter - validation_after_filter} 个无效样本)")
+            print(f"过滤后测试集大小: {test_after_filter} (过滤掉 {test_before_filter - test_after_filter} 个无效样本)")
+            
             from datasets import concatenate_datasets
             train_combined = concatenate_datasets([dataset['train'], dataset['validation']])
             
-            print(f"合并后训练集大小: {len(train_combined)}")
-            print(f"测试集大小: {len(dataset['test'])}")
+            print(f"合并后训练集大小: {len(train_combined)} (训练集 {train_after_filter} + 验证集 {validation_after_filter})")
+            print(f"最终测试集大小: {len(dataset['test'])}")
             
             tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, cache_dir=load_path)
             if tokenizer.pad_token is None:

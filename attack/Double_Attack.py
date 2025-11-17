@@ -8,6 +8,7 @@ import torch
 from tqdm import tqdm
 from sklearn.model_selection import train_test_split
 import random
+from sklearn.metrics import classification_report
 
 from attack.metric.metric import all_metrics_for_three_class, save_metric
 from attack.utils import baseline_prep, baseline_prep_for_double_attack
@@ -114,7 +115,6 @@ def attack_feature_base(P_shadow, label_list):
 
 def Double_Attack(args):
 
-
     ACC_list_list = []
     PRE_list_List = []
     REC_list_list = []
@@ -124,13 +124,14 @@ def Double_Attack(args):
     TPR0005_list_list = []
     TPR005_list_list = []
     Micro_F1_list=[]
+
     # 1. Training
     # prep data
     P_shadow_original,P_shadow_unlearned, P_original_target, P_unlearned_target, mem_train, mem_test,train_sample_label,test_sample_label = baseline_prep_for_double_attack(args)
+
     # drop the second dimension
     P_shadow_original = P_shadow_original[:, 0, :]
     P_shadow_unlearned = P_shadow_unlearned[:, 0, :]
-
     P_original_target = P_original_target[:, 0, :]
     P_unlearned_target = P_unlearned_target[:, 0, :]
 
@@ -154,14 +155,7 @@ def Double_Attack(args):
     probs_original = clf.pred(attack_X_original_test)
     y_pred_original = np.argmax(probs_original, axis=1)
 
-    # compare each round
-    # precision/recall/f1-score for that class is explicitly 0.0 instead of a warning or NaN.
-   # value_mapping = {1: 2, 2: 1}  # 0 is non-member,1 is member after mapping
-   # mem_test = [value_mapping.get(x, x) for x in mem_test]
 
-   # f1_for_target_class = f1_score(y_pred_original, mem_test, labels=np.unique(mem_test), average=None, zero_division=0)
-
-   # print(f1_for_target_class)
     #second attack model
     attack_X = attack_feature_base(P_shadow_unlearned, train_sample_label)
     ytest = mem_train
@@ -181,10 +175,6 @@ def Double_Attack(args):
     probs_unlearned = clf.pred(attack_X_unlearned_test2)
     y_pred_unlearned = np.argmax(probs_unlearned, axis=1)
 
-    # second round focus on member , label 1
-   # f1_for_target_class = f1_score(y_pred_unlearned, mem_test, labels=np.unique(mem_test), average=None, zero_division=0)
-   # print(f1_for_target_class)
-   # exit()
 
     y_pred = (y_pred_original == 0) * ((y_pred_unlearned == 0) * 0 + (y_pred_unlearned == 1) * 3) + (y_pred_original == 1) * ((y_pred_unlearned == 0) * 1 + (y_pred_unlearned == 1) * 2)
     y_target=mem_test
@@ -215,3 +205,27 @@ def Double_Attack(args):
                 TPR001_list_list, TPR0005_list_list, TPR005_list_list, args)
 
 
+def class_specific_accuracy(y_true, y_pred, classes=[0, 1]):
+    acc_list = []
+    for class_label in classes:
+        # 对于当前类别，正确预测为该类别的数量 / 实际为该类别的数量
+        true_positives = np.sum((y_true == class_label) & (y_pred == class_label))
+        total_actual = np.sum(y_true == class_label)
+        class_acc = true_positives / total_actual if total_actual > 0 else 0
+        acc_list.append(class_acc)
+    return acc_list
+
+def class_specific_f1(y_true, y_pred, classes=[0, 1]):
+    f1_list = []
+    for class_label in classes:
+        # 计算当前类别的F1-score
+        true_positives = np.sum((y_true == class_label) & (y_pred == class_label))
+        false_positives = np.sum((y_true != class_label) & (y_pred == class_label))
+        false_negatives = np.sum((y_true == class_label) & (y_pred != class_label))
+        
+        precision = true_positives / (true_positives + false_positives) if (true_positives + false_positives) > 0 else 0
+        recall = true_positives / (true_positives + false_negatives) if (true_positives + false_negatives) > 0 else 0
+        
+        f1 = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
+        f1_list.append(f1)
+    return f1_list

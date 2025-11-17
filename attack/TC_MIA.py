@@ -125,11 +125,11 @@ def TC_MIA(args):
     TPR005_list_list=[]
     Micro_F1_list=[]
 
-   # for method in ["TL", "Max", "Conf","Var", "All"]:
-   # for method in ["CP", "DF", 'SM', 'CT', 'CDS']:
+    #for method in ["TL", "Max", "Conf","Var", "All"]:
+    for method in ["CP", "DF", 'SM', 'CT', 'CDS']:
     #for method in ["CDS", 'CT']:
    # for method in ["CT"]:
-    for method in ["LO"]:
+   # for method in ["LO"]:
 
         attack_X = attack_feature_base(Pin, Pout,train_sample_label,method)
         ytest = mem_train

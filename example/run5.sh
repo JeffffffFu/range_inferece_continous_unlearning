@@ -34,4 +34,4 @@
 
 #python main.py --U_method NPO --dataset_name sst5 --net_name pythia70m --batch_size 32 --lr 0.00001  --trials 3 --proportion_of_group_unlearn 64 --num_epochs 10  --device cuda:0
 #python main.py --U_method GA --dataset_name mrpc --net_name pythia70m --batch_size 32 --lr 0.00001  --trials 3 --proportion_of_group_unlearn 16 --num_epochs 10  --device cuda:0
-python main.py --U_method GA --dataset_name sst5 --net_name opt13b --batch_size 32 --lr 0.00001  --trials 3 --proportion_of_group_unlearn 64 --num_epochs 10  --device cuda:0
+python main.py --U_method GA --dataset_name sst5 --net_name opt13b --batch_size 32 --lr 0.00001  --trials 3 --proportion_of_group_unlearn 64 --num_epochs 5  --device cuda:0

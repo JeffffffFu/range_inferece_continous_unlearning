@@ -1,7 +1,7 @@
 # for population_improve
 
 #retrain resnet18
-#python main.py  --attack_method TC_MIA --U_method retrain --dataset_name cifar10 --net_name resnet18  --trials 3 --proportion_of_group_unlearn 0.02 --observations 5 --device cuda:0
+python main.py  --attack_method TC_MIA --U_method retrain --dataset_name cifar10 --net_name resnet18  --trials 3 --proportion_of_group_unlearn 0.02 --observations 5 --device cuda:0
 #python main.py --attack_method TC_MIA --U_method retrain --dataset_name cifar100 --net_name resnet18  --trials 3 --proportion_of_group_unlearn 0.02 --observations 5 --device cuda:0
 #python main.py --attack_method TC_MIA --U_method retrain --dataset_name cinic10 --net_name resnet18  --trials 3 --proportion_of_group_unlearn 0.02 --observations 5 --device cuda:0
 #python main.py --attack_method TC_MIA --U_method retrain --dataset_name tinyimagenet --net_name resnet18  --trials 3 --proportion_of_group_unlearn 0.02 --observations 5 --device cuda:0
@@ -20,10 +20,10 @@
 
 #
 ##sisa  resnet18
-#python main.py --attack_method TC_MIA --U_method sisa --dataset_name cifar10 --net_name resnet18  --trials 3 --proportion_of_group_unlearn 0.02 --observations 5 --device cuda:0
-#python main.py --attack_method TC_MIA --U_method sisa --dataset_name cifar100 --net_name resnet18  --trials 3 --proportion_of_group_unlearn 0.02 --observations 5 --device cuda:0
-#python main.py --attack_method TC_MIA --U_method sisa --dataset_name cinic10 --net_name resnet18  --trials 3 --proportion_of_group_unlearn 0.02 --observations 5 --device cuda:0
-#python main.py --attack_method TC_MIA --U_method sisa --dataset_name tinyimagenet --net_name resnet18  --trials 3 --proportion_of_group_unlearn 0.02 --observations 5 --device cuda:0
+python main.py --attack_method TC_MIA --U_method sisa --dataset_name cifar10 --net_name resnet18  --trials 3 --proportion_of_group_unlearn 0.02 --observations 5 --device cuda:0
+python main.py --attack_method TC_MIA --U_method sisa --dataset_name cifar100 --net_name resnet18  --trials 3 --proportion_of_group_unlearn 0.02 --observations 5 --device cuda:0
+python main.py --attack_method TC_MIA --U_method sisa --dataset_name cinic10 --net_name resnet18  --trials 3 --proportion_of_group_unlearn 0.02 --observations 5 --device cuda:0
+python main.py --attack_method TC_MIA --U_method sisa --dataset_name tinyimagenet --net_name resnet18  --trials 3 --proportion_of_group_unlearn 0.02 --observations 5 --device cuda:0
 
 ##
 ###sisa densenet
@@ -40,10 +40,10 @@
 
 #
 ###GA resnet18
-#python main.py --attack_method TC_MIA --U_method GA --dataset_name cifar10 --net_name resnet18  --trials 3 --proportion_of_group_unlearn 0.02 --observations 5 --device cuda:0
-#python main.py --attack_method TC_MIA --U_method GA --dataset_name cifar100 --net_name resnet18  --trials 3 --proportion_of_group_unlearn 0.02 --observations 5 --device cuda:0
-#python main.py --attack_method TC_MIA --U_method GA --dataset_name cinic10 --net_name resnet18  --trials 3 --proportion_of_group_unlearn 0.02 --observations 5 --device cuda:0
-#python main.py --attack_method TC_MIA --U_method GA --dataset_name tinyimagenet --net_name resnet18  --trials 3 --proportion_of_group_unlearn 0.02 --observations 5 --device cuda:0
+python main.py --attack_method TC_MIA --U_method GA --dataset_name cifar10 --net_name resnet18  --trials 3 --proportion_of_group_unlearn 0.02 --observations 5 --device cuda:0
+python main.py --attack_method TC_MIA --U_method GA --dataset_name cifar100 --net_name resnet18  --trials 3 --proportion_of_group_unlearn 0.02 --observations 5 --device cuda:0
+python main.py --attack_method TC_MIA --U_method GA --dataset_name cinic10 --net_name resnet18  --trials 3 --proportion_of_group_unlearn 0.02 --observations 5 --device cuda:0
+python main.py --attack_method TC_MIA --U_method GA --dataset_name tinyimagenet --net_name resnet18  --trials 3 --proportion_of_group_unlearn 0.02 --observations 5 --device cuda:0
 
 ###GA simple_cnn
 #python main.py --attack_method TC_MIA --U_method GA --dataset_name cifar10 --net_name simple_cnn  --trials 3 --proportion_of_group_unlearn 0.02 --observations 5 --device cuda:0
@@ -59,10 +59,10 @@
 #
 
 ###scrub resnet18
-#python main.py --attack_method TC_MIA --U_method scrub --dataset_name cifar10 --net_name resnet18  --trials 3 --proportion_of_group_unlearn 0.02 --observations 5 --device cuda:0
-#python main.py --attack_method TC_MIA --U_method scrub --dataset_name cifar100 --net_name resnet18  --trials 3 --proportion_of_group_unlearn 0.02 --observations 5 --device cuda:0
-#python main.py --attack_method TC_MIA --U_method scrub --dataset_name cinic10 --net_name resnet18  --trials 3 --proportion_of_group_unlearn 0.02 --observations 5 --device cuda:0
-#python main.py --attack_method TC_MIA --U_method scrub --dataset_name tinyimagenet --net_name resnet18  --trials 3 --proportion_of_group_unlearn 0.02 --observations 5 --device cuda:0
+python main.py --attack_method TC_MIA --U_method scrub --dataset_name cifar10 --net_name resnet18  --trials 3 --proportion_of_group_unlearn 0.02 --observations 5 --device cuda:0
+python main.py --attack_method TC_MIA --U_method scrub --dataset_name cifar100 --net_name resnet18  --trials 3 --proportion_of_group_unlearn 0.02 --observations 5 --device cuda:0
+python main.py --attack_method TC_MIA --U_method scrub --dataset_name cinic10 --net_name resnet18  --trials 3 --proportion_of_group_unlearn 0.02 --observations 5 --device cuda:0
+python main.py --attack_method TC_MIA --U_method scrub --dataset_name tinyimagenet --net_name resnet18  --trials 3 --proportion_of_group_unlearn 0.02 --observations 5 --device cuda:0
 
 #python main.py --attack_method TC_MIA --U_method scrub --dataset_name cifar10 --net_name simple_cnn  --trials 3 --proportion_of_group_unlearn 0.02 --observations 5 --device cuda:0
 #python main.py --attack_method TC_MIA --U_method scrub --dataset_name cifar100 --net_name simple_cnn  --trials 3 --proportion_of_group_unlearn 0.02 --observations 5 --device cuda:0
@@ -76,10 +76,10 @@
 
 
 ##sparsity resnet18
-#python main.py --attack_method TC_MIA --U_method sparsity --dataset_name cifar10 --net_name resnet18  --trials 3 --proportion_of_group_unlearn 0.02 --observations 5 --device cuda:0
-#python main.py --attack_method TC_MIA --U_method sparsity --dataset_name cifar100 --net_name resnet18  --trials 3 --proportion_of_group_unlearn 0.02 --observations 5 --device cuda:0
-#python main.py --attack_method TC_MIA --U_method sparsity --dataset_name cinic10 --net_name resnet18  --trials 3 --proportion_of_group_unlearn 0.02 --observations 5 --device cuda:0
-#python main.py --attack_method TC_MIA --U_method sparsity --dataset_name tinyimagenet --net_name resnet18  --trials 3 --proportion_of_group_unlearn 0.02 --observations 5 --device cuda:0
+python main.py --attack_method TC_MIA --U_method sparsity --dataset_name cifar10 --net_name resnet18  --trials 3 --proportion_of_group_unlearn 0.02 --observations 5 --device cuda:0
+python main.py --attack_method TC_MIA --U_method sparsity --dataset_name cifar100 --net_name resnet18  --trials 3 --proportion_of_group_unlearn 0.02 --observations 5 --device cuda:0
+python main.py --attack_method TC_MIA --U_method sparsity --dataset_name cinic10 --net_name resnet18  --trials 3 --proportion_of_group_unlearn 0.02 --observations 5 --device cuda:0
+python main.py --attack_method TC_MIA --U_method sparsity --dataset_name tinyimagenet --net_name resnet18  --trials 3 --proportion_of_group_unlearn 0.02 --observations 5 --device cuda:0
 
 #python main.py --attack_method TC_MIA --U_method sparsity --dataset_name cifar10 --net_name simple_cnn  --trials 3 --proportion_of_group_unlearn 0.02 --observations 5 --device cuda:0
 #python main.py --attack_method TC_MIA --U_method sparsity --dataset_name cifar100 --net_name simple_cnn  --trials 3 --proportion_of_group_unlearn 0.02 --observations 5 --device cuda:0

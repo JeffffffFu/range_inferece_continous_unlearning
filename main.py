@@ -3,6 +3,7 @@ from attack import get_attack_method
 from parameter_parser import parameter_parser
 
 from unlearning import get_unlearn_method
+from unlearning.retain_eva import retain_eva
 from unlearning.retrain import retrain_save_shadow_for_population_attack2, \
     retrain_save_target_for_population_attack_batch, retrain_save_target_for_population_attack_batch2, \
     retrain_save_target_for_population_attack_batch3, retrain_save_shadow_for_population_attack_batch, \
@@ -31,3 +32,4 @@ def main(args):
 if __name__ == '__main__':
     args = parameter_parser()
     main(args)
+   # retain_eva(args)

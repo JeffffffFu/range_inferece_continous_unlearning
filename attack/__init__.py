@@ -1,6 +1,7 @@
 from attack.Double_Attack import Double_Attack
 from attack.TC_MIA import TC_MIA
 from attack.U_Leak import U_Leak
+from attack.eval_retain import Double_Attack2
 
 
 def get_attack_method(name):
@@ -13,5 +14,6 @@ def get_attack_method(name):
         return TC_MIA
     elif name == "Double_Attack":
         return Double_Attack
+        #return Double_Attack2
     else:
         raise NotImplementedError(f"Unlearn method {name} not implemented!")

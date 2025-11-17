@@ -91,6 +91,7 @@ def continuous_unlearn_GA(args):
                 # 从当前数据集中移除A部分
                 if isinstance(current_dataset, ConcatDataset):
                     # 如果current_dataset是ConcatDataset，只保留第一部分（非A数据）
+                    forget_set=data_A
                     current_dataset = current_dataset.datasets[0]
                 else:
                     # 如果current_dataset不包含A，说明A已经被移除了，直接使用
@@ -128,10 +129,7 @@ def continuous_unlearn_GA(args):
                 )
                 current_dataset = retain_set
 
-            # 统一在每一轮末尾执行GA遗忘学习
-            # 每轮都从原始模型开始进行遗忘学习（符合连续遗忘逻辑）
-            # 注意：这里每轮都从原始模型开始，这是正确的连续遗忘逻辑
-            # 因为每轮遗忘的是不同的数据子集，需要基于原始模型进行遗忘
+
 
             # 准备数据加载器
             forget_loader = torch.utils.data.DataLoader(

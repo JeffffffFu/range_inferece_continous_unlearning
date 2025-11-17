@@ -91,11 +91,15 @@ def adjust_ratio_samples(list_a, list_b, list_c, target_ratio=(2, 1, 2)):
 
     return new_list_a.tolist(), new_list_b, new_list_c
 
+
+def test4():
+    net_name='pythia70m'
+    dataset='sst5'
+    save_path = os.getcwd() + f"/save/continuous_finetune/{net_name}/{dataset}/0.01/target/0/timestamp_0"
+    save_path = os.getcwd() + f"/save/continuous_finetune/{net_name}/{dataset}/0.01/target/0"
+
+    data = np.load(f"{save_path}/sample_status_history.npy")
+    print(data)
+
 if __name__ == "__main__":
-    list_a=[0,1,2,0,1,2,0,1,2,0,1,2]
-    list_b=['a','b','c','a','b','c','a','b','c','a','b','c',]
-    list_c=list_b
-    list_a, list_b, list_c=adjust_ratio_samples(list_a, list_b, list_c, target_ratio=(4, 1, 2))
-    print(list_a)
-    print(list_b)
-    print(list_c)
+    test4()

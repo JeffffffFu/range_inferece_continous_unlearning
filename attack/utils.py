@@ -9,7 +9,6 @@ from sklearn.preprocessing import StandardScaler, MinMaxScaler
 def attack_feature_base(P_in, P_out, label_list,method):
     assert method in ["CDS", "CT",'DC','SC','DD','SD','ED',"CP", "DF", 'SM','test','LO']
 
-
     attack_feature=[]
     if  method == "CT":
         for posterior_in, posterior_out,label in zip(P_in, P_out,label_list):
@@ -110,7 +109,7 @@ def baseline_prep(args):
     target_shadow_path = os.getcwd() + f"/save/{args['U_method']}/{args['net_name']}/{args['dataset_name']}/{args['proportion_of_group_unlearn']}/shadow/0"
   #  target_save_path = os.getcwd() + f"/save/retrain/{args['net_name']}/{args['dataset_name']}/{args['proportion_of_group_unlearn']}/target/0"
    # target_shadow_path = os.getcwd() + f"/save/retrain/{args['net_name']}/{args['dataset_name']}/{args['proportion_of_group_unlearn']}/shadow/0"
-    target_shadow_path = os.getcwd() + f"/save/retrain/pythia70m/{args['dataset_name']}/0.02//shadow/0"
+  #  target_shadow_path = os.getcwd() + f"/save/retrain/pythia70m/{args['dataset_name']}/0.02//shadow/0"
 
     # target_shadow_path = os.getcwd() + f"/save/{args['U_method']}/simple_cnn/{args['dataset_name']}/0.02/shadow/0"
    # target_shadow_path = os.getcwd() + f"/save/{args['U_method']}/{args['net_name']}/{args['dataset_name']}/0.02/shadow/0"
@@ -141,10 +140,10 @@ def baseline_prep(args):
 
             # unlearned_sample_posterior
             unlearned_sample_original_model_posterior = torch.load(
-                f"{save_path}/unlearned_sample_original_model_posterior.pth")
+                f"{save_path}/unlearned_sample_original_model_posterior.pth", weights_only=False)
             unlearned_sample_unlearned_model_posterior = torch.load(
-                f"{save_path}/unlearned_sample_unlearned_model_posterior.pth")
-            unlearned_sample_label=torch.load(f"{save_path}/target_sample_label.pth")
+                f"{save_path}/unlearned_sample_unlearned_model_posterior.pth", weights_only=False)
+            unlearned_sample_label=torch.load(f"{save_path}/target_sample_label.pth", weights_only=False)
 
             P_original_model_target.append(unlearned_sample_original_model_posterior)
             P_unlearned_model_target.append(unlearned_sample_unlearned_model_posterior)
@@ -152,9 +151,9 @@ def baseline_prep(args):
             target_sample_label.append(unlearned_sample_label)
 
             # unseen_sample_posterior
-            unseen_sample_original_model_posterior = torch.load(f"{save_path}/unseen_sample_original_model_posterior.pth")
-            unseen_sample_unlearned_model_posterior = torch.load(f"{save_path}/unseen_sample_unlearned_model_posterior.pth")
-            unseen_sample_label=torch.load(f"{save_path}/unseen_sample_label.pth")
+            unseen_sample_original_model_posterior = torch.load(f"{save_path}/unseen_sample_original_model_posterior.pth", weights_only=False)
+            unseen_sample_unlearned_model_posterior = torch.load(f"{save_path}/unseen_sample_unlearned_model_posterior.pth", weights_only=False)
+            unseen_sample_label=torch.load(f"{save_path}/unseen_sample_label.pth", weights_only=False)
 
             P_original_model_target.append(unseen_sample_original_model_posterior)
             P_unlearned_model_target.append(unseen_sample_unlearned_model_posterior)
@@ -162,9 +161,9 @@ def baseline_prep(args):
             target_sample_label.append(unseen_sample_label)
 
             # retain_sample_posterior
-            retain_sample_original_model_posterior = torch.load(f"{save_path}/retain_sample_original_model_posterior.pth")
-            retain_sample_unlearned_model_posterior = torch.load(f"{save_path}/retain_sample_unlearned_model_posterior.pth")
-            retain_sample_label=torch.load(f"{save_path}/retain_sample_label.pth")
+            retain_sample_original_model_posterior = torch.load(f"{save_path}/retain_sample_original_model_posterior.pth", weights_only=False)
+            retain_sample_unlearned_model_posterior = torch.load(f"{save_path}/retain_sample_unlearned_model_posterior.pth", weights_only=False)
+            retain_sample_label=torch.load(f"{save_path}/retain_sample_label.pth", weights_only=False)
 
             P_original_model_target.append(retain_sample_original_model_posterior)
             P_unlearned_model_target.append(retain_sample_unlearned_model_posterior)
@@ -175,33 +174,33 @@ def baseline_prep(args):
     for t in tqdm(range(args['observations']), desc='preparing members'):
         for i in range(shadow_num_subfolders):
             save_path = os.getcwd() + f"/save/{args['U_method']}/{args['net_name']}/{args['dataset_name']}/{args['proportion_of_group_unlearn']}/shadow/{t}/{i}"
-            save_path = os.getcwd() + f"/save/retrain/pythia70m/{args['dataset_name']}/0.02/shadow/{t}/{i}"
+          #  save_path = os.getcwd() + f"/save/retrain/pythia70m/{args['dataset_name']}/0.02/shadow/{t}/{i}"
 
           #  save_path = os.getcwd() + f"/save/retrain/{args['net_name']}/{args['dataset_name']}/0.02/shadow/{t}/{i}"
           #  save_path = os.getcwd() + f"/save/{args['U_method']}/{args['net_name']}/{args['dataset_name']}/0.02/shadow_{args['size_of_shadow_training']}/{t}/{i}"
 
             #unlearned_sample_posterior
-            unlearned_sample_original_model_posterior = torch.load(f"{save_path}/unlearned_sample_original_model_posterior.pth")
-            unlearned_sample_unlearned_model_posterior = torch.load(f"{save_path}/unlearned_sample_unlearned_model_posterior.pth")
-            unlearned_sample_label=torch.load(f"{save_path}/target_sample_label.pth")
+            unlearned_sample_original_model_posterior = torch.load(f"{save_path}/unlearned_sample_original_model_posterior.pth", weights_only=False)
+            unlearned_sample_unlearned_model_posterior = torch.load(f"{save_path}/unlearned_sample_unlearned_model_posterior.pth", weights_only=False)
+            unlearned_sample_label=torch.load(f"{save_path}/target_sample_label.pth", weights_only=False)
             P_original_model_shadow.append(unlearned_sample_original_model_posterior)
             P_unlearned_model_shadow.append(unlearned_sample_unlearned_model_posterior)
             shadow_class.append(1)
             shadow_sample_label.append(unlearned_sample_label)
 
             # unseen_sample_posterior
-            unseen_sample_original_model_posterior= torch.load(f"{save_path}/unseen_sample_original_model_posterior.pth")
-            unseen_sample_unlearned_model_posterior= torch.load(f"{save_path}/unseen_sample_unlearned_model_posterior.pth")
-            unseen_sample_label=torch.load(f"{save_path}/unseen_sample_label.pth")
+            unseen_sample_original_model_posterior= torch.load(f"{save_path}/unseen_sample_original_model_posterior.pth", weights_only=False)
+            unseen_sample_unlearned_model_posterior= torch.load(f"{save_path}/unseen_sample_unlearned_model_posterior.pth", weights_only=False)
+            unseen_sample_label=torch.load(f"{save_path}/unseen_sample_label.pth", weights_only=False)
             P_original_model_shadow.append(unseen_sample_original_model_posterior)
             P_unlearned_model_shadow.append(unseen_sample_unlearned_model_posterior)
             shadow_class.append(0)
             shadow_sample_label.append(unseen_sample_label)
 
             # retain_sample_posterior
-            retain_sample_original_model_posterior= torch.load(f"{save_path}/retain_sample_original_model_posterior.pth")
-            retain_sample_unlearned_model_posterior= torch.load(f"{save_path}/retain_sample_unlearned_model_posterior.pth")
-            retain_sample_label=torch.load(f"{save_path}/retain_sample_label.pth")
+            retain_sample_original_model_posterior= torch.load(f"{save_path}/retain_sample_original_model_posterior.pth", weights_only=False)
+            retain_sample_unlearned_model_posterior= torch.load(f"{save_path}/retain_sample_unlearned_model_posterior.pth", weights_only=False)
+            retain_sample_label=torch.load(f"{save_path}/retain_sample_label.pth", weights_only=False)
             P_original_model_shadow.append(retain_sample_original_model_posterior)
             P_unlearned_model_shadow.append(retain_sample_unlearned_model_posterior)
             shadow_class.append(2)
@@ -228,8 +227,8 @@ def baseline_prep_for_double_attack(args):
 
 
 
-    target_save_path = os.getcwd() + f"/save/{args['U_method']}/{args['net_name']}/{args['dataset_name']}/{args['proportion_of_group_unlearn']}/target/0"
-    target_shadow_path = os.getcwd() + f"/save/{args['U_method']}/{args['net_name']}/{args['dataset_name']}/{args['proportion_of_group_unlearn']}/shadow/0"
+    target_save_path = os.getcwd() + f"/save2/{args['U_method']}/{args['net_name']}/{args['dataset_name']}/{args['proportion_of_group_unlearn']}/target/0"
+    target_shadow_path = os.getcwd() + f"/save/retrain/{args['net_name']}/{args['dataset_name']}/{args['proportion_of_group_unlearn']}/shadow/0"
 
     target_num_subfolders=sum(os.path.isdir(os.path.join(target_save_path, name)) for name in os.listdir(target_save_path))
     shadow_num_subfolders=sum(os.path.isdir(os.path.join(target_shadow_path, name)) for name in os.listdir(target_shadow_path))
@@ -237,15 +236,10 @@ def baseline_prep_for_double_attack(args):
     for t in tqdm(range(args['trials']), desc='preparing members'):
 
         for i in range(target_num_subfolders):
-            if args['flag']=='none':
-                save_path = os.getcwd() + f"/save/{args['U_method']}/{args['net_name']}/{args['dataset_name']}/{args['proportion_of_group_unlearn']}/target/{t}/{i}"
-            else:
-           # different type samples
-                save_path = os.getcwd() + f"/save/{args['U_method']}/{args['net_name']}/{args['dataset_name']}/{args['proportion_of_group_unlearn']}/{args['flag']}/{t}/{i}"
-          #  print(f"{save_path}/unlearned_sample_original_model_posterior.pth")
-            unlearned_sample_original_model_posterior = torch.load(f"{save_path}/unlearned_sample_original_model_posterior.pth")
-            unlearned_sample_unlearned_model_posterior = torch.load(f"{save_path}/unlearned_sample_unlearned_model_posterior.pth")
-            unlearned_sample_label=torch.load(f"{save_path}/target_sample_label.pth")
+            save_path = os.getcwd() + f"/save2/{args['U_method']}/{args['net_name']}/{args['dataset_name']}/{args['proportion_of_group_unlearn']}/target/{t}/{i}"
+            unlearned_sample_original_model_posterior = torch.load(f"{save_path}/unlearned_sample_original_model_posterior.pth", weights_only=False)
+            unlearned_sample_unlearned_model_posterior = torch.load(f"{save_path}/unlearned_sample_unlearned_model_posterior.pth", weights_only=False)
+            unlearned_sample_label=torch.load(f"{save_path}/target_sample_label.pth", weights_only=False)
 
             P_original_model_target.append(unlearned_sample_original_model_posterior)
             P_unlearned_model_target.append(unlearned_sample_unlearned_model_posterior)
@@ -253,9 +247,9 @@ def baseline_prep_for_double_attack(args):
             target_sample_label.append(unlearned_sample_label)
 
             # unseen_sample_posterior
-            unseen_sample_original_model_posterior = torch.load(f"{save_path}/unseen_sample_original_model_posterior.pth")
-            unseen_sample_unlearned_model_posterior = torch.load(f"{save_path}/unseen_sample_unlearned_model_posterior.pth")
-            unseen_sample_label=torch.load(f"{save_path}/unseen_sample_label.pth")
+            unseen_sample_original_model_posterior = torch.load(f"{save_path}/unseen_sample_original_model_posterior.pth", weights_only=False)
+            unseen_sample_unlearned_model_posterior = torch.load(f"{save_path}/unseen_sample_unlearned_model_posterior.pth", weights_only=False)
+            unseen_sample_label=torch.load(f"{save_path}/unseen_sample_label.pth", weights_only=False)
 
             P_original_model_target.append(unseen_sample_original_model_posterior)
             P_unlearned_model_target.append(unseen_sample_unlearned_model_posterior)
@@ -263,9 +257,9 @@ def baseline_prep_for_double_attack(args):
             target_sample_label.append(unseen_sample_label)
 
             # retain_sample_posterior
-            retain_sample_original_model_posterior = torch.load(f"{save_path}/retain_sample_original_model_posterior.pth")
-            retain_sample_unlearned_model_posterior = torch.load(f"{save_path}/retain_sample_unlearned_model_posterior.pth")
-            retain_sample_label=torch.load(f"{save_path}/retain_sample_label.pth")
+            retain_sample_original_model_posterior = torch.load(f"{save_path}/retain_sample_original_model_posterior.pth", weights_only=False)
+            retain_sample_unlearned_model_posterior = torch.load(f"{save_path}/retain_sample_unlearned_model_posterior.pth", weights_only=False)
+            retain_sample_label=torch.load(f"{save_path}/retain_sample_label.pth", weights_only=False)
 
             P_original_model_target.append(retain_sample_original_model_posterior)
             P_unlearned_model_target.append(retain_sample_unlearned_model_posterior)
@@ -275,23 +269,22 @@ def baseline_prep_for_double_attack(args):
     #shadow  just for double attack
     for t in tqdm(range(args['observations']), desc='preparing members'):
         for i in range(shadow_num_subfolders):
-            save_path = os.getcwd() + f"/save/{args['U_method']}/{args['net_name']}/{args['dataset_name']}/{args['proportion_of_group_unlearn']}/shadow/{t}/{i}"
-         #   save_path = os.getcwd() + f"/save/retrain/{args['net_name']}/{args['dataset_name']}/0.02/shadow/{t}/{i}"
+            save_path = os.getcwd() + f"/save/retrain/{args['net_name']}/{args['dataset_name']}/{args['proportion_of_group_unlearn']}/shadow/{t}/{i}"
 
 
             # unseen_sample_posterior
-            unseen_sample_original_model_posterior= torch.load(f"{save_path}/unseen_sample_original_model_posterior.pth")
-            unseen_sample_unlearned_model_posterior= torch.load(f"{save_path}/unseen_sample_unlearned_model_posterior.pth")
-            unseen_sample_label=torch.load(f"{save_path}/unseen_sample_label.pth")
+            unseen_sample_original_model_posterior= torch.load(f"{save_path}/unseen_sample_original_model_posterior.pth", weights_only=False)
+            unseen_sample_unlearned_model_posterior= torch.load(f"{save_path}/unseen_sample_unlearned_model_posterior.pth", weights_only=False)
+            unseen_sample_label=torch.load(f"{save_path}/unseen_sample_label.pth", weights_only=False)
             P_original_model_shadow.append(unseen_sample_original_model_posterior)
             P_unlearned_model_shadow.append(unseen_sample_unlearned_model_posterior)
             shadow_class.append(0)
             shadow_sample_label.append(unseen_sample_label)
 
             # retain_sample_posterior
-            retain_sample_original_model_posterior= torch.load(f"{save_path}/retain_sample_original_model_posterior.pth")
-            retain_sample_unlearned_model_posterior= torch.load(f"{save_path}/retain_sample_unlearned_model_posterior.pth")
-            retain_sample_label=torch.load(f"{save_path}/retain_sample_label.pth")
+            retain_sample_original_model_posterior= torch.load(f"{save_path}/retain_sample_original_model_posterior.pth", weights_only=False)
+            retain_sample_unlearned_model_posterior= torch.load(f"{save_path}/retain_sample_unlearned_model_posterior.pth", weights_only=False)
+            retain_sample_label=torch.load(f"{save_path}/retain_sample_label.pth", weights_only=False)
             P_original_model_shadow.append(retain_sample_original_model_posterior)
             P_unlearned_model_shadow.append(retain_sample_unlearned_model_posterior)
             shadow_class.append(1)
@@ -303,6 +296,113 @@ def baseline_prep_for_double_attack(args):
     P_original_model_target = np.array(P_original_model_target)
     P_unlearned_model_target = np.array(P_unlearned_model_target)
     return P_original_model_shadow, P_unlearned_model_shadow, P_original_model_target, P_unlearned_model_target, shadow_class, target_class,shadow_sample_label,target_sample_label
+
+
+def baseline_prep_for_double_attack2(args):
+    P_original_model_target = []
+    P_unlearned_model_target = []
+    target_class = []
+    P_original_model_shadow = []
+    P_unlearned_model_shadow = []
+    shadow_class = []
+    shadow_sample_label = []
+    target_sample_label = []
+
+    target_save_path = os.getcwd() + f"/save2/{args['U_method']}/{args['net_name']}/{args['dataset_name']}/{args['proportion_of_group_unlearn']}/target/0"
+    target_shadow_path = os.getcwd() + f"/save/retrain/{args['net_name']}/{args['dataset_name']}/{args['proportion_of_group_unlearn']}/shadow/0"
+
+    if args['flag'] != 'none':
+        target_save_path = os.getcwd() + f"/save/{args['U_method']}/{args['net_name']}/{args['dataset_name']}/{args['proportion_of_group_unlearn']}/{args['flag']}/0"
+
+    target_num_subfolders = sum(
+        os.path.isdir(os.path.join(target_save_path, name)) for name in os.listdir(target_save_path))
+    shadow_num_subfolders = sum(
+        os.path.isdir(os.path.join(target_shadow_path, name)) for name in os.listdir(target_shadow_path))
+
+    # target
+    for t in tqdm(range(args['trials']), desc='preparing members'):
+
+        for i in range(target_num_subfolders):
+            save_path = os.getcwd() + f"/save2/{args['U_method']}/{args['net_name']}/{args['dataset_name']}/{args['proportion_of_group_unlearn']}/target/{t}/{i}"
+
+            # unlearned_sample_posterior
+            unlearned_sample_original_model_posterior = torch.load(
+                f"{save_path}/unlearned_sample_original_model_posterior.pth", weights_only=False)
+            unlearned_sample_unlearned_model_posterior = torch.load(
+                f"{save_path}/unlearned_sample_unlearned_model_posterior.pth", weights_only=False)
+            unlearned_sample_label = torch.load(f"{save_path}/target_sample_label.pth", weights_only=False)
+
+            P_original_model_target.append(unlearned_sample_original_model_posterior)
+            P_unlearned_model_target.append(unlearned_sample_unlearned_model_posterior)
+            target_class.append(1)
+            target_sample_label.append(unlearned_sample_label)
+
+            # unseen_sample_posterior
+            unseen_sample_original_model_posterior = torch.load(
+                f"{save_path}/unseen_sample_original_model_posterior.pth", weights_only=False)
+            unseen_sample_unlearned_model_posterior = torch.load(
+                f"{save_path}/unseen_sample_unlearned_model_posterior.pth", weights_only=False)
+            unseen_sample_label = torch.load(f"{save_path}/unseen_sample_label.pth", weights_only=False)
+
+            P_original_model_target.append(unseen_sample_original_model_posterior)
+            P_unlearned_model_target.append(unseen_sample_unlearned_model_posterior)
+            target_class.append(0)
+            target_sample_label.append(unseen_sample_label)
+
+            # retain_sample_posterior
+            retain_sample_original_model_posterior = torch.load(
+                f"{save_path}/retain_sample_original_model_posterior.pth", weights_only=False)
+            retain_sample_unlearned_model_posterior = torch.load(
+                f"{save_path}/retain_sample_unlearned_model_posterior.pth", weights_only=False)
+            retain_sample_label = torch.load(f"{save_path}/retain_sample_label.pth", weights_only=False)
+
+            P_original_model_target.append(retain_sample_original_model_posterior)
+            P_unlearned_model_target.append(retain_sample_unlearned_model_posterior)
+            target_class.append(2)
+            target_sample_label.append(retain_sample_label)
+
+    # shadow
+    for t in tqdm(range(args['observations']), desc='preparing members'):
+        for i in range(shadow_num_subfolders):
+            save_path = os.getcwd() + f"/save/retrain/{args['net_name']}/{args['dataset_name']}/{args['proportion_of_group_unlearn']}/shadow/{t}/{i}"
+
+            unlearned_sample_original_model_posterior = torch.load(
+                f"{save_path}/unlearned_sample_original_model_posterior.pth", weights_only=False)
+            unlearned_sample_unlearned_model_posterior = torch.load(
+                f"{save_path}/unlearned_sample_unlearned_model_posterior.pth", weights_only=False)
+            unlearned_sample_label = torch.load(f"{save_path}/target_sample_label.pth", weights_only=False)
+            P_original_model_shadow.append(unlearned_sample_original_model_posterior)
+            P_unlearned_model_shadow.append(unlearned_sample_unlearned_model_posterior)
+            shadow_class.append(1)
+            shadow_sample_label.append(unlearned_sample_label)
+
+            # unseen_sample_posterior
+            unseen_sample_original_model_posterior = torch.load(
+                f"{save_path}/unseen_sample_original_model_posterior.pth", weights_only=False)
+            unseen_sample_unlearned_model_posterior = torch.load(
+                f"{save_path}/unseen_sample_unlearned_model_posterior.pth", weights_only=False)
+            unseen_sample_label = torch.load(f"{save_path}/unseen_sample_label.pth", weights_only=False)
+            P_original_model_shadow.append(unseen_sample_original_model_posterior)
+            P_unlearned_model_shadow.append(unseen_sample_unlearned_model_posterior)
+            shadow_class.append(0)
+            shadow_sample_label.append(unseen_sample_label)
+
+            # retain_sample_posterior
+            retain_sample_original_model_posterior = torch.load(
+                f"{save_path}/retain_sample_original_model_posterior.pth", weights_only=False)
+            retain_sample_unlearned_model_posterior = torch.load(
+                f"{save_path}/retain_sample_unlearned_model_posterior.pth", weights_only=False)
+            retain_sample_label = torch.load(f"{save_path}/retain_sample_label.pth", weights_only=False)
+            P_original_model_shadow.append(retain_sample_original_model_posterior)
+            P_unlearned_model_shadow.append(retain_sample_unlearned_model_posterior)
+            shadow_class.append(2)
+            shadow_sample_label.append(retain_sample_label)
+
+    P_original_model_shadow = np.array(P_original_model_shadow)
+    P_unlearned_model_shadow = np.array(P_unlearned_model_shadow)
+    P_original_model_target = np.array(P_original_model_target)
+    P_unlearned_model_target = np.array(P_unlearned_model_target)
+    return P_original_model_shadow, P_unlearned_model_shadow, P_original_model_target, P_unlearned_model_target, shadow_class, target_class, shadow_sample_label, target_sample_label
 
 
 def adjust_ratio_samples(list_a, list_b, list_c, list_d,target_ratio=(2, 1, 2)):
