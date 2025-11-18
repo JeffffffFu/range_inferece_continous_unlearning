@@ -143,6 +143,39 @@ def continuous_update_finetune(args):
         for i in range(total_samples):
             sample_status_history.append([sample_status[i]])  # 初始状态
         
+        # 固定约1%的样本始终保持在unseen状态（不会被insert）
+        # 从所有样本中随机选择，这些样本将始终保持状态为0
+        fixed_unseen_ratio = 0.01  # 1%
+        num_fixed_unseen = max(1, int(total_samples * fixed_unseen_ratio))
+        # 从所有样本中随机选择，优先选择初始状态为0的样本
+        all_indices = list(range(total_samples))
+        initial_unseen_indices = np.where(sample_status == 0)[0].tolist()
+        # 如果初始unseen样本足够，优先选择它们；否则从所有样本中选择
+        if len(initial_unseen_indices) >= num_fixed_unseen:
+            fixed_unseen_indices = set(random.sample(initial_unseen_indices, num_fixed_unseen))
+        else:
+            # 如果初始unseen样本不足，从所有样本中选择，但确保它们的状态为0
+            fixed_unseen_indices = set(random.sample(initial_unseen_indices, len(initial_unseen_indices)))
+            remaining_needed = num_fixed_unseen - len(fixed_unseen_indices)
+            # 从其他样本中选择，但需要确保它们的状态会被设置为0（这些样本可能来自训练集）
+            other_indices = [idx for idx in all_indices if idx not in fixed_unseen_indices]
+            additional_fixed = random.sample(other_indices, min(remaining_needed, len(other_indices)))
+            fixed_unseen_indices.update(additional_fixed)
+            # 确保这些样本的状态为0
+            for idx in additional_fixed:
+                sample_status[idx] = 0
+                if idx in current_train_indices:
+                    current_train_indices.remove(idx)
+        print(f"  -> Fixed {len(fixed_unseen_indices)} samples ({len(fixed_unseen_indices)/total_samples*100:.2f}%) to remain unseen permanently")
+        
+        # 更新状态历史记录，反映fixed_unseen样本的状态变化
+        for i in range(total_samples):
+            sample_status_history[i][0] = sample_status[i]  # 更新初始状态
+        
+        # 更新当前训练集，排除fixed_unseen样本
+        current_train_indices = [idx for idx in current_train_indices if idx not in fixed_unseen_indices]
+        current_train_dataset = Subset(all_samples, current_train_indices)
+        
         # 存储所有timestamp的打印信息
         timestamp_logs = []
         
@@ -192,12 +225,17 @@ def continuous_update_finetune(args):
                 # 从当前训练集中移除这些样本
                 current_train_indices = [idx for idx in current_train_indices if idx not in remove_indices]
             
-            # 3. Insert操作：从test数据集中选择0.1%的数据insert到训练集
-            # 只从状态为0的样本中选择（即不在训练集中的样本）
-            available_test_indices = [idx for idx in range(len(target_m), total_samples) if sample_status[idx] == 0]
+            # 3. Insert操作：从所有状态为0的样本中选择0.1%的数据insert到训练集
+            # 包括：1) 原始test_data中状态为0的样本
+            #       2) 从训练集中被remove出来的样本（状态变为0）
+            # 但排除固定unseen的样本
+            available_test_indices = [
+                idx for idx in range(total_samples)
+                if sample_status[idx] == 0 and idx not in fixed_unseen_indices
+            ]
             num_to_insert = max(1, int(len(current_train_indices) * update_proportion))
             
-            if num_to_insert > 0 and len(available_test_indices) > 0:
+            if num_to_insert > 0 and len(available_test_indices) >= num_to_insert:
                 # 从可用的test样本中随机选择要插入的样本
                 insert_indices = random.sample(
                     available_test_indices, 
@@ -231,7 +269,14 @@ def continuous_update_finetune(args):
                 for idx in insert_indices:
                     sample_status[idx] = 1
                 current_train_indices.extend(insert_indices)
-            # 更新当前训练集（确保与sample_status一致）
+            else:
+                if num_to_insert > 0 and len(available_test_indices) < num_to_insert:
+                    print(f"    -> Skip insert: only {len(available_test_indices)} available samples (need {num_to_insert}, {len(fixed_unseen_indices)} fixed as unseen)")
+                insert_indices = []
+            # 确保固定unseen样本的状态始终为0（保护机制）
+            for idx in fixed_unseen_indices:
+                sample_status[idx] = 0
+            
             # 直接使用sample_status == 1来构建retain set，确保不包含unseen样本
             retain_indices = np.where(sample_status == 1)[0].tolist()
             current_train_indices = retain_indices  # 同步更新
@@ -256,9 +301,7 @@ def continuous_update_finetune(args):
             # 4. 更新每个样本的状态历史（记录当前timestamp的状态）
             for i in range(total_samples):
                 sample_status_history[i].append(sample_status[i])
-            
             # 5. 保存每个样本的output（只保存当前模型的output）
-            # 为所有样本（训练集+测试集）保存output
             all_samples_loader = DataLoader(
                 all_samples,
                 batch_size=args['batch_size'],
@@ -311,25 +354,37 @@ def continuous_update_finetune(args):
             # 保存模型
             torch.save(current_model.state_dict(), f"{timestamp_save_path}/model_state_dict.pth")
             # 收集打印信息
-            train_acc = current_model.test_model_acc(DataLoader(current_train_dataset, batch_size=args['batch_size'], shuffle=False))
-            
-            # 评估test set accuracy：只评估状态为0（unseen）的样本
-            # test_data的索引范围是从len(target_m)到total_samples
-            unseen_test_indices = [
-                idx for idx in range(len(target_m), total_samples) 
-                if sample_status[idx] == 0
-            ]
-            if len(unseen_test_indices) > 0:
-                unseen_test_dataset = Subset(all_samples, unseen_test_indices)
-                unseen_test_loader = DataLoader(
-                    unseen_test_dataset,
+            # 评估training set accuracy：所有状态为1的样本都属于training set
+            # 包括：1) 原始训练集中状态为1的样本
+            #       2) 从test set中insert进来的样本（状态变为1）
+            train_set_indices = np.where(sample_status == 1)[0].tolist()
+            if len(train_set_indices) > 0:
+                train_set_dataset = Subset(all_samples, train_set_indices)
+                train_set_loader = DataLoader(
+                    train_set_dataset,
                     batch_size=args['batch_size'],
                     shuffle=False
                 )
-                test_acc = current_model.test_model_acc(unseen_test_loader)
+                train_acc = current_model.test_model_acc(train_set_loader)
+            else:
+                train_acc = 0.0
+                print(f"    -> Warning: No training set samples (all samples are in test set) at timestamp {k}")
+            
+            # 评估test set accuracy：所有状态为0的样本都属于test set
+            # 包括：1) 原始test_data中状态为0的样本
+            #       2) 从训练集中被remove出来的样本（状态变为0）
+            test_set_indices = np.where(sample_status == 0)[0].tolist()
+            if len(test_set_indices) > 0:
+                test_set_dataset = Subset(all_samples, test_set_indices)
+                test_set_loader = DataLoader(
+                    test_set_dataset,
+                    batch_size=args['batch_size'],
+                    shuffle=False
+                )
+                test_acc = current_model.test_model_acc(test_set_loader)
             else:
                 test_acc = 0.0
-                print(f"    -> Warning: No unseen samples in test set at timestamp {k}")
+                print(f"    -> Warning: No test set samples (all samples are in training set) at timestamp {k}")
             
             log_entry = f"Timestamp {k}:\n"
             log_entry += f"  -> Training set accuracy: {train_acc:.4f}\n"
