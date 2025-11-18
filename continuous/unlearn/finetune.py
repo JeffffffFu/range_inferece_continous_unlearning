@@ -84,7 +84,7 @@ def continuous_update_finetune(args):
     print("dataset and net_name:", args['dataset_name'], args['net_name'])
 
     # 参数控制
-    total_unlearn_steps = args.get('total_unlearn_steps', 50)
+    total_unlearn_steps = args.get('total_unlearn_steps', 80)
     update_proportion = args['proportion_of_group_unlearn']  # 0.1% 的数据更新比例
     
     print(f"  -> Total unlearn steps: {total_unlearn_steps}")
@@ -232,22 +232,23 @@ def continuous_update_finetune(args):
                 for idx in insert_indices:
                     sample_status[idx] = 1
                 current_train_indices.extend(insert_indices)
-            
-            # 更新当前训练集
-            current_train_dataset = Subset(all_samples, current_train_indices)
+            # 更新当前训练集（确保与sample_status一致）
+            # 直接使用sample_status == 1来构建retain set，确保不包含unseen样本
+            retain_indices = np.where(sample_status == 1)[0].tolist()
+            current_train_indices = retain_indices  # 同步更新
+            current_train_dataset = Subset(all_samples, retain_indices)
             
             # 在retain set上进行refine，恢复模型性能
-            if len(current_train_indices) > 0:
+            if len(retain_indices) > 0:
                 retain_loader = DataLoader(
                     current_train_dataset,
                     batch_size=args['batch_size'],
                     shuffle=True
                 )
-                # 使用较小的学习率在整个retain set上进行refine
                 optimizer = optim.Adam(current_model.parameters(), lr=args['lr'], weight_decay=5e-4)
                 criterion = nn.CrossEntropyLoss()
                 finetune_with_correct_labels(current_model, retain_loader, optimizer, criterion, args, num_epochs=1)
-                print(f"    -> Refined model on retain set ({len(current_train_indices)} samples)")
+                print(f"    -> Refined model on retain set ({len(retain_indices)} samples, all with status=1)")
             
             print(f"    -> Current training set size: {len(current_train_indices)}")
             print(f"    -> Samples in training set (status=1): {np.sum(sample_status == 1)}")
@@ -307,8 +308,7 @@ def continuous_update_finetune(args):
             np.save(f"{timestamp_save_path}/labels.npy", labels_list)
             np.save(f"{timestamp_save_path}/sample_indices.npy", np.array(indices_list))
             
-            print(f"    -> Saved outputs for {len(indices_list)} samples to {timestamp_save_path}")
-            
+
             # 保存模型
             torch.save(current_model.state_dict(), f"{timestamp_save_path}/model_state_dict.pth")
             # 收集打印信息
@@ -335,53 +335,165 @@ def continuous_update_finetune(args):
         print(f"\n  -> Saved sample status history to {save_path}/sample_status_history.npy")
         print(f"      Shape: {sample_status_array.shape} (samples x timestamps)")
         
-        # 7. 统计所有样本的状态分布（排除初始状态，只统计timestamp 0到n-1）
-        # sample_status_array[:, 1:] 排除初始状态，只保留timestamp状态
-        timestamp_status = sample_status_array[:, 1:]  # shape: (total_samples, total_timestamps)
-        num_timestamps = timestamp_status.shape[1]
+        # 6.5. 转换sample_status_history为包含breakpoint信息的状态编码
+        # 转换规则：
+        # 0->0: 0 (连续unseen，不是breakpoint)
+        # 1->1: 1 (连续retain，不是breakpoint)
+        # 0->1: 2 (新增点，breakpoint)
+        # 1->0: 3 (移除点，breakpoint)
+        num_timestamps_with_initial = sample_status_array.shape[1]  # 包含初始状态
+        num_timestamps = num_timestamps_with_initial - 1  # 排除初始状态
         
-        # 统计每个样本在所有timestamp中1的个数
-        ones_count_per_sample = np.sum(timestamp_status, axis=1)  # shape: (total_samples,)
+        # 初始化转换后的状态数组：shape为 (total_samples, num_timestamps)
+        # 只转换timestamp 1到n（因为需要比较前一个timestamp）
+        converted_status_array = np.zeros((total_samples, num_timestamps), dtype=int)
+        
+        for i in range(total_samples):
+            for k in range(1, num_timestamps_with_initial):  # 从timestamp 1开始
+                prev_status = sample_status_array[i, k-1]  # 前一个timestamp的状态
+                curr_status = sample_status_array[i, k]     # 当前timestamp的状态
+                
+                if prev_status == 0 and curr_status == 0:
+                    converted_status_array[i, k-1] = 0  # 连续unseen
+                elif prev_status == 1 and curr_status == 1:
+                    converted_status_array[i, k-1] = 1  # 连续retain
+                elif prev_status == 0 and curr_status == 1:
+                    converted_status_array[i, k-1] = 2  # 新增点（breakpoint）
+                elif prev_status == 1 and curr_status == 0:
+                    converted_status_array[i, k-1] = 3  # 移除点（breakpoint）
+        
+        # 保存转换后的状态数组
+        np.save(f"{save_path}/sample_status_converted.npy", converted_status_array)
+        print(f"  -> Saved converted status history to {save_path}/sample_status_converted.npy")
+        print(f"      Shape: {converted_status_array.shape} (samples x timestamps)")
+        print(f"      Status encoding: 0=unseen, 1=retain, 2=insert(breakpoint), 3=remove(breakpoint)")
+        
+        # 统计转换后的状态分布（用于后续统计）
+        converted_stats = {
+            0: np.sum(converted_status_array == 0),
+            1: np.sum(converted_status_array == 1),
+            2: np.sum(converted_status_array == 2),
+            3: np.sum(converted_status_array == 3)
+        }
+        # 7. 基于转换后的状态进行详细统计（主要统计）
+        num_unseen_per_sample = np.sum(converted_status_array == 0, axis=1)  # 每个样本的unseen个数
+        num_retain_per_sample = np.sum(converted_status_array == 1, axis=1)  # 每个样本的retain个数
+        num_insert_per_sample = np.sum(converted_status_array == 2, axis=1)  # 每个样本的insert个数
+        num_remove_per_sample = np.sum(converted_status_array == 3, axis=1)  # 每个样本的remove个数
+        num_breakpoints_per_sample = num_insert_per_sample + num_remove_per_sample
+        
+        # 统计详细模式
+        # 1. No breakpoint情况：区分全部unseen和全部retain
+        all_unseen_samples = np.where((num_breakpoints_per_sample == 0) & (num_unseen_per_sample == num_timestamps))[0]
+        all_retain_samples = np.where((num_breakpoints_per_sample == 0) & (num_retain_per_sample == num_timestamps))[0]
+        
+        # 2. 有breakpoint情况：统计insert和remove的数量分布
+        has_breakpoint_samples = np.where(num_breakpoints_per_sample > 0)[0]
         
         # 统计各种模式的数量
-        status_statistics = {}
-        for num_ones in range(num_timestamps + 1):
-            count = np.sum(ones_count_per_sample == num_ones)
-            status_statistics[num_ones] = count
+        pattern_statistics = {
+            'all_unseen': len(all_unseen_samples),
+            'all_retain': len(all_retain_samples),
+        }
+        
+        # 对于有breakpoint的样本，按insert和remove的数量分类
+        for num_insert in range(num_timestamps + 1):
+            for num_remove in range(num_timestamps + 1):
+                if num_insert + num_remove == 0:
+                    continue  # 跳过no breakpoint的情况
+                if num_insert + num_remove > num_timestamps:
+                    continue
+                mask = (num_insert_per_sample == num_insert) & (num_remove_per_sample == num_remove)
+                count = np.sum(mask)
+                if count > 0:
+                    pattern_key = f"{num_insert}_insert_{num_remove}_remove"
+                    pattern_statistics[pattern_key] = count
+        
+        # 保存breakpoint索引
+        # 对于每个样本，记录breakpoint的timestamp和类型
+        breakpoint_indices_dict = {}
+        for i in range(total_samples):
+            insert_indices = np.where(converted_status_array[i, :] == 2)[0].tolist()  # insert breakpoint的timestamp
+            remove_indices = np.where(converted_status_array[i, :] == 3)[0].tolist()  # remove breakpoint的timestamp
+            if len(insert_indices) > 0 or len(remove_indices) > 0:
+                breakpoint_indices_dict[i] = {
+                    'insert': insert_indices,
+                    'remove': remove_indices
+                }
+        
+        # 保存breakpoint索引到文件
+        breakpoint_indices_file = f"{save_path}/breakpoint_indices.npy"
+        # 使用字典保存，因为每个样本的breakpoint数量不同
+        np.save(breakpoint_indices_file, breakpoint_indices_dict, allow_pickle=True)
+        print(f"  -> Saved breakpoint indices to {breakpoint_indices_file}")
         
         # 打印统计结果
-        print(f"\n  -> Status Distribution Statistics (across {num_timestamps} timestamps):")
-        print(f"      {'Pattern':<20} {'Count':<10} {'Percentage':<10}")
-        print(f"      {'-' * 40}")
-        for num_ones in range(num_timestamps + 1):
-            count = status_statistics[num_ones]
-            percentage = (count / total_samples) * 100 if total_samples > 0 else 0.0
-            pattern_desc = f"{num_ones} ones, {num_timestamps - num_ones} zeros"
-            if num_ones == 0:
-                pattern_desc = "All zeros (0)"
-            elif num_ones == num_timestamps:
-                pattern_desc = "All ones (1)"
-            print(f"      {pattern_desc:<20} {count:<10} {percentage:>6.2f}%")
+        print(f"\n  -> Converted Status Pattern Statistics (across {num_timestamps} timestamps):")
+        print(f"      {'Pattern':<40} {'Count':<15} {'Percentage':<15}")
+        print(f"      {'-' * 70}")
         
-        # 保存统计结果到文件
-        stats_file_path = f"{save_path}/status_statistics.txt"
-        with open(stats_file_path, 'w', encoding='utf-8') as f:
-            f.write(f"Trial {t} - Status Distribution Statistics\n")
-            f.write("=" * 60 + "\n\n")
+        # No breakpoint情况
+        all_unseen_count = pattern_statistics['all_unseen']
+        all_retain_count = pattern_statistics['all_retain']
+        all_unseen_pct = (all_unseen_count / total_samples) * 100 if total_samples > 0 else 0.0
+        all_retain_pct = (all_retain_count / total_samples) * 100 if total_samples > 0 else 0.0
+        print(f"      {'All Unseen (no breakpoint)':<40} {all_unseen_count:<15} {all_unseen_pct:>13.2f}%")
+        print(f"      {'All Retain (no breakpoint)':<40} {all_retain_count:<15} {all_retain_pct:>13.2f}%")
+        
+        # 有breakpoint情况
+        for pattern_key in sorted(pattern_statistics.keys()):
+            if pattern_key in ['all_unseen', 'all_retain']:
+                continue
+            count = pattern_statistics[pattern_key]
+            percentage = (count / total_samples) * 100 if total_samples > 0 else 0.0
+            # 解析pattern_key: "num_insert_insert_num_remove_remove"
+            parts = pattern_key.split('_')
+            num_insert = int(parts[0])
+            num_remove = int(parts[2])
+            pattern_desc = f"{num_insert} insert, {num_remove} remove breakpoints"
+            print(f"      {pattern_desc:<40} {count:<15} {percentage:>13.2f}%")
+        
+        # 保存主要统计结果到文件（基于转换后的状态）
+        main_stats_file_path = f"{save_path}/status_statistics.txt"
+        with open(main_stats_file_path, 'w', encoding='utf-8') as f:
+            f.write(f"Trial {t} - Converted Status Pattern Statistics\n")
+            f.write("=" * 70 + "\n\n")
             f.write(f"Total samples: {total_samples}\n")
             f.write(f"Total timestamps: {num_timestamps}\n\n")
-            f.write(f"{'Pattern':<30} {'Count':<15} {'Percentage':<15}\n")
-            f.write("-" * 60 + "\n")
-            for num_ones in range(num_timestamps + 1):
-                count = status_statistics[num_ones]
+            f.write(f"Status encoding:\n")
+            f.write(f"  0: Unseen (0->0, not breakpoint)\n")
+            f.write(f"  1: Retain (1->1, not breakpoint)\n")
+            f.write(f"  2: Insert (0->1, breakpoint)\n")
+            f.write(f"  3: Remove (1->0, breakpoint)\n\n")
+            f.write(f"Pattern Distribution:\n")
+            f.write(f"{'Pattern':<50} {'Count':<15} {'Percentage':<15}\n")
+            f.write("-" * 80 + "\n")
+            
+            # No breakpoint情况
+            f.write(f"{'All Unseen (no breakpoint)':<50} {all_unseen_count:<15} {all_unseen_pct:>13.2f}%\n")
+            f.write(f"{'All Retain (no breakpoint)':<50} {all_retain_count:<15} {all_retain_pct:>13.2f}%\n")
+            
+            # 有breakpoint情况
+            for pattern_key in sorted(pattern_statistics.keys()):
+                if pattern_key in ['all_unseen', 'all_retain']:
+                    continue
+                count = pattern_statistics[pattern_key]
                 percentage = (count / total_samples) * 100 if total_samples > 0 else 0.0
-                pattern_desc = f"{num_ones} ones, {num_timestamps - num_ones} zeros"
-                if num_ones == 0:
-                    pattern_desc = "All zeros (0)"
-                elif num_ones == num_timestamps:
-                    pattern_desc = "All ones (1)"
-                f.write(f"{pattern_desc:<30} {count:<15} {percentage:>13.2f}%\n")
-        print(f"  -> Saved status statistics to {stats_file_path}")
+                parts = pattern_key.split('_')
+                num_insert = int(parts[0])
+                num_remove = int(parts[2])
+                pattern_desc = f"{num_insert} insert, {num_remove} remove breakpoints"
+                f.write(f"{pattern_desc:<50} {count:<15} {percentage:>13.2f}%\n")
+            
+            # 添加详细的状态统计
+            f.write(f"\n\nDetailed Status Count Statistics:\n")
+            f.write(f"{'Status Type':<30} {'Total Count':<20} {'Average per Sample':<20}\n")
+            f.write("-" * 70 + "\n")
+            f.write(f"{'Unseen (0->0)':<30} {converted_stats[0]:<20} {converted_stats[0]/total_samples:.2f}\n")
+            f.write(f"{'Retain (1->1)':<30} {converted_stats[1]:<20} {converted_stats[1]/total_samples:.2f}\n")
+            f.write(f"{'Insert (0->1)':<30} {converted_stats[2]:<20} {converted_stats[2]/total_samples:.2f}\n")
+            f.write(f"{'Remove (1->0)':<30} {converted_stats[3]:<20} {converted_stats[3]/total_samples:.2f}\n")
+        print(f"  -> Saved main status statistics to {main_stats_file_path}")
         
         # 8. 保存所有timestamp的打印信息
         log_file_path = f"{save_path}/timestamp_logs.txt"

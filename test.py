@@ -98,8 +98,8 @@ def test4():
     save_path = os.getcwd() + f"/save/continuous_finetune/{net_name}/{dataset}/0.01/target/0/timestamp_0"
     save_path = os.getcwd() + f"/save/continuous_finetune/{net_name}/{dataset}/0.01/target/0"
 
-    data = np.load(f"{save_path}/sample_status_history.npy")
-    print(data)
+    data = np.load(f"{save_path}/sample_status_converted.npy")
+    print(data[1012])
 
 if __name__ == "__main__":
     test4()
