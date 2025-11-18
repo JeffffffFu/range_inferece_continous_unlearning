@@ -178,7 +178,6 @@ def continuous_update_finetune(args):
                     remove_epoch=2
                 finetune_with_wrong_labels(current_model, forget_loader, optimizer, criterion, args, num_epochs=remove_epoch)
                 
-                # 评估remove set的准确率（使用原始正确标签）
                 remove_loader_eval = DataLoader(
                     remove_dataset,
                     batch_size=args['batch_size'],
@@ -313,7 +312,24 @@ def continuous_update_finetune(args):
             torch.save(current_model.state_dict(), f"{timestamp_save_path}/model_state_dict.pth")
             # 收集打印信息
             train_acc = current_model.test_model_acc(DataLoader(current_train_dataset, batch_size=args['batch_size'], shuffle=False))
-            test_acc = current_model.test_model_acc(test_loader)
+            
+            # 评估test set accuracy：只评估状态为0（unseen）的样本
+            # test_data的索引范围是从len(target_m)到total_samples
+            unseen_test_indices = [
+                idx for idx in range(len(target_m), total_samples) 
+                if sample_status[idx] == 0
+            ]
+            if len(unseen_test_indices) > 0:
+                unseen_test_dataset = Subset(all_samples, unseen_test_indices)
+                unseen_test_loader = DataLoader(
+                    unseen_test_dataset,
+                    batch_size=args['batch_size'],
+                    shuffle=False
+                )
+                test_acc = current_model.test_model_acc(unseen_test_loader)
+            else:
+                test_acc = 0.0
+                print(f"    -> Warning: No unseen samples in test set at timestamp {k}")
             
             log_entry = f"Timestamp {k}:\n"
             log_entry += f"  -> Training set accuracy: {train_acc:.4f}\n"
