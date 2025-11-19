@@ -303,6 +303,12 @@ def continuous_update_finetune(args):
         current_train_indices = [idx for idx in current_train_indices if idx not in fixed_unseen_indices]
         current_train_dataset = Subset(all_samples, current_train_indices)
         
+        # 初始化冷却期跟踪：记录每个样本最后一次被操作（insert或remove）的timestamp
+        # last_operation_timestamp[i] = k 表示样本i在timestamp k被操作过
+        # 如果为None，表示从未被操作过
+        last_operation_timestamp = {i: None for i in range(total_samples)}
+        cooldown_period = args.get('cooldown_period', 5)  # 默认冷却期为5个timestamp
+        
         # 存储所有timestamp的打印信息
         timestamp_logs = []
         
@@ -316,22 +322,36 @@ def continuous_update_finetune(args):
             remove_acc_after_remove = 0.0  # Remove操作后的准确率
             
             # 2. Remove操作：从训练集中选择0.1%的数据进行remove
+            # 排除在冷却期内的样本（最近5个timestamp内被操作过）
             num_to_remove = max(1, int(len(current_train_indices) * update_proportion))
             remove_indices = []
             if num_to_remove > 0 and len(current_train_indices) > 0:
-                # 从当前训练集中随机选择要移除的样本
-                remove_indices = random.sample(current_train_indices, min(num_to_remove, len(current_train_indices)))
-                remove_dataset = Subset(all_samples, remove_indices)
-                print(f"    -> Remove: {len(remove_indices)} samples from training set")
+                # 排除在冷却期内的样本
+                eligible_for_remove = [
+                    idx for idx in current_train_indices
+                    if last_operation_timestamp[idx] is None or (k - last_operation_timestamp[idx] > cooldown_period)
+                ]
+                
+                if len(eligible_for_remove) >= num_to_remove:
+                    # 从符合条件的样本中随机选择要移除的样本
+                    remove_indices = random.sample(eligible_for_remove, min(num_to_remove, len(eligible_for_remove)))
+                    remove_dataset = Subset(all_samples, remove_indices)
+                    print(f"    -> Remove: {len(remove_indices)} samples from training set")
+                else:
+                    print(f"    -> Skip remove: only {len(eligible_for_remove)} eligible samples (need {num_to_remove}, {len(current_train_indices) - len(eligible_for_remove)} in cooldown)")
             
             # 3. Insert操作：从所有状态为0的样本中选择0.1%的数据insert到训练集
             # 包括：1) 原始test_data中状态为0的样本
             #       2) 从训练集中被remove出来的样本（状态变为0，但排除本次remove的样本）
             # 但排除：1) 固定unseen的样本
             #        2) 本次remove的样本（防止在同一个timestamp中重新insert）
+            #        3) 在冷却期内的样本（最近5个timestamp内被操作过）
             available_test_indices = [
                 idx for idx in range(total_samples)
-                if sample_status[idx] == 0 and idx not in fixed_unseen_indices and idx not in remove_indices
+                if sample_status[idx] == 0 
+                and idx not in fixed_unseen_indices 
+                and idx not in remove_indices
+                and (last_operation_timestamp[idx] is None or (k - last_operation_timestamp[idx] > cooldown_period))
             ]
             num_to_insert = max(1, int(len(current_train_indices) * update_proportion))
             
@@ -353,12 +373,14 @@ def continuous_update_finetune(args):
             # Remove的样本状态改为0
             for idx in remove_indices:
                 sample_status[idx] = 0
+                last_operation_timestamp[idx] = k  # 记录操作timestamp
             # 从当前训练集中移除这些样本
             current_train_indices = [idx for idx in current_train_indices if idx not in remove_indices]
             
             # Insert的样本状态改为1
             for idx in insert_indices:
                 sample_status[idx] = 1
+                last_operation_timestamp[idx] = k  # 记录操作timestamp
             current_train_indices.extend(insert_indices)
             
             # 5. 交替进行Remove Set（错误标签）训练和Retain Set（正确标签）Finetune
@@ -482,7 +504,6 @@ def continuous_update_finetune(args):
                     outputs_current.append(probs_current.cpu().numpy())
                     labels_list.append(labels.numpy() if isinstance(labels, torch.Tensor) else labels)
                     
-                    # 记录样本索引
                     # DataLoader遍历ConcatDataset时，会按顺序返回样本
                     # 需要正确计算每个batch中样本的全局索引
                     batch_start_idx = batch_idx * args['batch_size']
