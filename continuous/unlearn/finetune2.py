@@ -7,70 +7,11 @@ import torch.optim as optim
 import numpy as np
 import random
 import os
-from torch.utils.data import Dataset, Subset, DataLoader, ConcatDataset
+from torch.utils.data import Subset, DataLoader, ConcatDataset
 from model.DNN import DNN
 from unlearning.utils import sample_target_samples, save_output
-
-
-class WrongLabelDataset(Dataset):
-    """数据集包装类，用于生成错误标签"""
-    def __init__(self, dataset, num_classes):
-        self.dataset = dataset
-        self.num_classes = num_classes
-        
-    def __len__(self):
-        return len(self.dataset)
-    
-    def __getitem__(self, idx):
-        sample = self.dataset[idx]
-        if isinstance(sample, dict):
-            # 文本数据
-            data = {k: v for k, v in sample.items() if k != 'labels'}
-            true_label = sample['labels']
-            if isinstance(true_label, torch.Tensor):
-                true_label = true_label.item()
-            # 生成错误标签（与真实标签不同）
-            wrong_label = (true_label + 1) % self.num_classes
-            return {**data, 'labels': torch.tensor(wrong_label, dtype=torch.long)}
-        else:
-            # 图像数据
-            data, true_label = sample
-            if isinstance(true_label, torch.Tensor):
-                true_label = true_label.item()
-            # 生成错误标签（与真实标签不同）
-            wrong_label = (true_label + 1) % self.num_classes
-            return data, torch.tensor(wrong_label, dtype=torch.long)
-
-
-class MixedLabelDataset(Dataset):
-    """混合数据集类，用于同时处理正确标签和错误标签的数据"""
-    def __init__(self, correct_label_dataset, wrong_label_dataset):
-        """
-        Args:
-            correct_label_dataset: 使用正确标签的数据集（insert的数据）
-            wrong_label_dataset: 使用错误标签的数据集（remove的数据，已经是WrongLabelDataset）
-        """
-        self.correct_dataset = correct_label_dataset
-        self.wrong_dataset = wrong_label_dataset
-        self.correct_len = len(correct_label_dataset) if correct_label_dataset is not None else 0
-        self.wrong_len = len(wrong_label_dataset) if wrong_label_dataset is not None else 0
-        
-    def __len__(self):
-        return self.correct_len + self.wrong_len
-    
-    def __getitem__(self, idx):
-        if idx < self.correct_len:
-            # 返回正确标签的数据（insert的数据）
-            if self.correct_dataset is not None:
-                return self.correct_dataset[idx]
-            else:
-                raise IndexError(f"Index {idx} out of range for correct_dataset")
-        else:
-            # 返回错误标签的数据（remove的数据）
-            if self.wrong_dataset is not None:
-                return self.wrong_dataset[idx - self.correct_len]
-            else:
-                raise IndexError(f"Index {idx} out of range for wrong_dataset")
+from continuous.unlearn.GA import GA_train
+from continuous.unlearn.NPO import NPO_train
 
 
 def finetune_with_wrong_labels(model, forget_loader, optimizer, criterion, args, num_epochs=5):
@@ -107,28 +48,6 @@ def finetune_with_correct_labels(model, insert_loader, optimizer, criterion, arg
             optimizer.zero_grad()
             output = model.forward_propagation(data)
             loss = criterion(output, target)  # 使用正确标签计算损失
-            loss.backward()
-            optimizer.step()
-
-
-def finetune_on_remove_set(model, remove_loader, args, num_epochs=3):
-    """在Remove Set上使用错误标签进行微调（遗忘效果）"""
-    optimizer = optim.Adam(model.parameters(), lr=args['lr'], weight_decay=5e-4)
-    criterion = nn.CrossEntropyLoss()
-    
-    model.train()
-    for epoch in range(num_epochs):
-        for batch in remove_loader:
-            if isinstance(batch, dict):
-                data = {k: v.to(args['device']) for k, v in batch.items() if k != 'labels'}
-                target = batch['labels'].to(args['device'])
-            else:
-                data, target = batch
-                data, target = data.to(args['device']), target.to(args['device'])
-            
-            optimizer.zero_grad()
-            output = model.forward_propagation(data)
-            loss = criterion(output, target)  # 使用错误标签计算损失
             loss.backward()
             optimizer.step()
 
@@ -207,11 +126,38 @@ def evaluate_four_sets(model, all_samples, sample_status, remove_indices, insert
     return train_acc, test_acc, insert_acc, remove_acc
 
 
-def continuous_update_finetune(args):
+def run_remove_unlearning(current_model, original_model, remove_dataset, retain_dataset, test_loader, args):
+    """根据配置选择GA或NPO作为remove算法"""
+    method = args.get('remove_method', 'ga').lower()
+    if remove_dataset is None or len(remove_dataset) == 0:
+        return current_model
+    if retain_dataset is None or len(retain_dataset) == 0:
+        return current_model
+
+    forget_loader = DataLoader(
+        remove_dataset,
+        batch_size=args['batch_size'],
+        shuffle=True
+    )
+    retain_loader = DataLoader(
+        retain_dataset,
+        batch_size=args['batch_size'],
+        shuffle=True
+    )
+
+    if method == 'ga':
+        return GA_train(current_model, forget_loader, retain_loader, test_loader, args)
+    elif method == 'npo':
+        return NPO_train(original_model, current_model, forget_loader, retain_loader, test_loader, args)
+    else:
+        raise ValueError(f"Unsupported remove_method: {method}. Use 'GA' or 'NPO'.")
+
+
+def continuous_update_finetune2(args):
     print("dataset and net_name:", args['dataset_name'], args['net_name'])
 
     # 参数控制
-    total_unlearn_steps = args.get('total_unlearn_steps', 60)
+    total_unlearn_steps = args.get('total_unlearn_steps', 40)
     update_proportion = args['proportion_of_group_unlearn']  # 0.1% 的数据更新比例
     
     print(f"  -> Total unlearn steps: {total_unlearn_steps}")
@@ -261,7 +207,7 @@ def continuous_update_finetune(args):
         current_model.load_state_dict(original_model.state_dict())
         
         # 保存路径
-        save_path = os.getcwd() + f"/save/continuous_finetune/{args['net_name']}/{args['dataset_name']}/{args['proportion_of_group_unlearn']}/target/{t}/"
+        save_path = os.getcwd() + f"/save4/continuous_finetune/{args['net_name']}/{args['dataset_name']}/{args['proportion_of_group_unlearn']}/target/{t}/"
         os.makedirs(save_path, exist_ok=True)
         
         # 初始化存储结构：二维list存储每个样本在每个timestamp的状态
@@ -363,46 +309,34 @@ def continuous_update_finetune(args):
             
             # 5. 交替进行Remove Set（错误标签）训练和Retain Set（正确标签）Finetune
             # 设置交替次数
-            num_alternations = args.get('num_alternations', 4)
+            num_alternations = args.get('num_alternations', 1)  # 默认交替3次
             
-            # 准备remove set（使用错误标签）
-            remove_loader = None
+            # 准备remove set
+            remove_dataset = None
             if len(remove_indices) > 0:
                 remove_dataset = Subset(all_samples, remove_indices)
-                wrong_label_dataset = WrongLabelDataset(remove_dataset, num_classes)
-                remove_loader = DataLoader(
-                    wrong_label_dataset,
-                    batch_size=args['batch_size'],
-                    shuffle=True
-                )
             
             # 准备retain set（使用正确标签）
             retain_indices = np.where(sample_status == 1)[0].tolist()
-            retain_loader = None
-            if len(retain_indices) > 0:
-                current_train_dataset = Subset(all_samples, retain_indices)
-                retain_loader = DataLoader(
-                    current_train_dataset,
-                    batch_size=args['batch_size'],
-                    shuffle=True
-                )
+            retain_dataset = Subset(all_samples, retain_indices) if len(retain_indices) > 0 else None
             
-            # 设置epoch数
-            if args['dataset_name'] == 'news20':
-                remove_epoch = 3
-                retain_epoch = 1
-            else:
-                remove_epoch = 3
-                retain_epoch = 1
+
             
             # 交替训练
             for alt_iter in range(num_alternations):
                 print(f"    -> Alternation {alt_iter + 1}/{num_alternations}:")
                 
-                # Step 1: 在Remove Set上使用错误标签训练（遗忘效果）
-                if remove_loader is not None:
-                    finetune_on_remove_set(current_model, remove_loader, args, num_epochs=remove_epoch)
-                    print(f"      -> Remove finetune (wrong labels): {len(remove_indices)} samples, {remove_epoch} epochs")
+                # Step 1: 使用GA/NPO对Remove Set进行遗忘
+                if remove_dataset is not None and len(remove_dataset) > 0:
+                    current_model = run_remove_unlearning(
+                        current_model,
+                        original_model,
+                        remove_dataset,
+                        retain_dataset if len(retain_dataset) > 0 else None,
+                        test_loader,
+                        args
+                    )
+                    print(f"      -> Remove unlearning ({args.get('remove_method', 'GA')}): {len(remove_indices)} samples")
                     
                     # 评估四个set的准确率
                     train_acc, test_acc, insert_acc, remove_acc = evaluate_four_sets(
@@ -411,9 +345,14 @@ def continuous_update_finetune(args):
                     print(f"      -> After remove finetune - Train: {train_acc:.4f}, Test: {test_acc:.4f}, Insert: {insert_acc:.4f}, Remove: {remove_acc:.4f}")
                 
                 # Step 2: 在Retain Set上使用正确标签finetune（恢复性能）
-                if retain_loader is not None:
-                    finetune_on_retain_set(current_model, retain_loader, args, num_epochs=retain_epoch)
-                    print(f"      -> Retain finetune (correct labels): {len(retain_indices)} samples, {retain_epoch} epochs")
+                if len(retain_dataset) > 0:
+                    retain_loader = DataLoader(
+                        retain_dataset,
+                        batch_size=args['batch_size'],
+                        shuffle=True
+                    )
+                    finetune_on_retain_set(current_model, retain_loader, args, num_epochs=1)
+                    print(f"      -> Retain finetune (correct labels): {len(retain_dataset)} samples, {1} epochs")
                     
                     # 评估四个set的准确率
                     train_acc, test_acc, insert_acc, remove_acc = evaluate_four_sets(
@@ -515,7 +454,6 @@ def continuous_update_finetune(args):
             # 记录日志
             log_entry = f"Timestamp {k}:\n"
             log_entry += f"  -> Final accuracy - Train: {train_acc:.4f}, Test: {test_acc:.4f}, Insert: {insert_acc:.4f}, Remove: {remove_acc_after_finetune:.4f}\n"
-            log_entry += f"  -> Alternations: {num_alternations} (remove: {remove_epoch} epochs, retain: {retain_epoch} epochs)\n"
             timestamp_logs.append(log_entry)
         
         # 6. 在trial结束后，统一保存样本状态历史

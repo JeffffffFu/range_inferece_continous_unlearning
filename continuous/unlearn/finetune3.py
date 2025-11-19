@@ -11,7 +11,6 @@ from torch.utils.data import Dataset, Subset, DataLoader, ConcatDataset
 from model.DNN import DNN
 from unlearning.utils import sample_target_samples, save_output
 
-
 class WrongLabelDataset(Dataset):
     """数据集包装类，用于生成错误标签"""
     def __init__(self, dataset, num_classes):
@@ -207,7 +206,7 @@ def evaluate_four_sets(model, all_samples, sample_status, remove_indices, insert
     return train_acc, test_acc, insert_acc, remove_acc
 
 
-def continuous_update_finetune(args):
+def continuous_update_finetune3(args):
     print("dataset and net_name:", args['dataset_name'], args['net_name'])
 
     # 参数控制
@@ -252,6 +251,11 @@ def continuous_update_finetune(args):
         print(f"  -> Initial training set size: {len(target_m)} (status=1)")
         print(f"  -> Initial test set size: {len(test_data)} (status=0)")
         
+        # 记录原始test数据集的全局索引（只能从这里采样insert）
+        original_test_indices = set(range(len(target_m), total_samples))
+        # 记录被remove的样本，后续不能再被insert
+        permanently_removed_indices = set()
+
         # 当前训练集（初始为target_m）
         current_train_indices = list(range(len(target_m)))
         current_train_dataset = Subset(all_samples, current_train_indices)
@@ -261,7 +265,7 @@ def continuous_update_finetune(args):
         current_model.load_state_dict(original_model.state_dict())
         
         # 保存路径
-        save_path = os.getcwd() + f"/save/continuous_finetune/{args['net_name']}/{args['dataset_name']}/{args['proportion_of_group_unlearn']}/target/{t}/"
+        save_path = os.getcwd() + f"/save3/continuous_finetune/{args['net_name']}/{args['dataset_name']}/{args['proportion_of_group_unlearn']}/target/{t}/"
         os.makedirs(save_path, exist_ok=True)
         
         # 初始化存储结构：二维list存储每个样本在每个timestamp的状态
@@ -324,14 +328,15 @@ def continuous_update_finetune(args):
                 remove_dataset = Subset(all_samples, remove_indices)
                 print(f"    -> Remove: {len(remove_indices)} samples from training set")
             
-            # 3. Insert操作：从所有状态为0的样本中选择0.1%的数据insert到训练集
-            # 包括：1) 原始test_data中状态为0的样本
-            #       2) 从训练集中被remove出来的样本（状态变为0，但排除本次remove的样本）
-            # 但排除：1) 固定unseen的样本
-            #        2) 本次remove的样本（防止在同一个timestamp中重新insert）
+            # 记录本次remove的样本，后续不允许insert
+            permanently_removed_indices.update(remove_indices)
+
+            # 3. Insert操作：只能从原始test数据集中选择仍为0的样本，且未被移除过
             available_test_indices = [
-                idx for idx in range(total_samples)
-                if sample_status[idx] == 0 and idx not in fixed_unseen_indices and idx not in remove_indices
+                idx for idx in original_test_indices
+                if sample_status[idx] == 0
+                and idx not in fixed_unseen_indices
+                and idx not in permanently_removed_indices
             ]
             num_to_insert = max(1, int(len(current_train_indices) * update_proportion))
             
@@ -363,7 +368,7 @@ def continuous_update_finetune(args):
             
             # 5. 交替进行Remove Set（错误标签）训练和Retain Set（正确标签）Finetune
             # 设置交替次数
-            num_alternations = args.get('num_alternations', 4)
+            num_alternations = args.get('num_alternations', 3)  # 默认交替3次
             
             # 准备remove set（使用错误标签）
             remove_loader = None

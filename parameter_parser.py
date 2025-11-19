@@ -22,7 +22,7 @@ def parameter_parser():
     # parser.add_argument('--attack_model', type=str, default='DT',
     #                     choices=['DT', 'MLP', 'LR', 'RF'])
     parser.add_argument('--U_method', type=str, default='None',
-                        choices=['retrain', 'sisa','GA','sparsity','IF','fisher','scrub','sisa','retrain_dp','certified','NegGrad','NPO','None','continuous_unlearn_retrain','continuous_unlearn_NPO','continuous_unlearn_GA','all','continuous_update_finetune'])
+                        choices=['retrain', 'sisa','GA','sparsity','IF','fisher','scrub','sisa','retrain_dp','certified','NegGrad','NPO','None','continuous_unlearn_retrain','continuous_unlearn_NPO','continuous_unlearn_GA','all','continuous_update_finetune','continuous_update_finetune2'])
     parser.add_argument('--retrain', type=int, default=0)
     parser.add_argument('--pre_train', type=str, default='both',choices=['both','target', 'shadow'])
     parser.add_argument('--attack_method', type=str, default='None',

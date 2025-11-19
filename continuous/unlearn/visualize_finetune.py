@@ -14,7 +14,7 @@ def visualize_finetune_results(args, trial=0):
         trial: trial编号，默认为0
     """
     # 构建保存路径
-    save_path = os.getcwd() + f"/save/continuous_finetune/{args['net_name']}/{args['dataset_name']}/0.01/target/{trial}"
+    save_path = os.getcwd() + f"/save3/continuous_finetune/{args['net_name']}/{args['dataset_name']}/0.01/target/{trial}"
     
     print(f"Loading data from: {save_path}")
     
@@ -243,7 +243,7 @@ if __name__ == '__main__':
         args = {
             'net_name': 'pythia70m',
             'dataset_name': 'sst5',
-            'proportion_of_group_unlearn': 0.001
+            'proportion_of_group_unlearn': 0.01
         }
         visualize_finetune_results(args, trial=0)
 

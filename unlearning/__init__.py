@@ -1,6 +1,8 @@
 from continuous.unlearn.GA import continuous_unlearn_GA
 from continuous.unlearn.NPO import continuous_unlearn_NPO
 from continuous.unlearn.finetune import continuous_update_finetune
+from continuous.unlearn.finetune2 import continuous_update_finetune2
+from continuous.unlearn.finetune3 import continuous_update_finetune3
 from continuous.unlearn.retrain import continuous_unlearn_retrain
 from continuous.unlearn.sparsity import continuous_unlearn_sparsity
 from unlearning.GA import GA
@@ -32,6 +34,8 @@ def get_unlearn_method(name):
         return continuous_unlearn_sparsity
     elif name == "continuous_update_finetune":
         return continuous_update_finetune
+    elif name == "continuous_update_finetune2":
+        return continuous_update_finetune2
     elif name == "GA":
         return GA
     elif name == "sparsity":
