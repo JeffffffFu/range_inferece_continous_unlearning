@@ -42,6 +42,37 @@ class WrongLabelDataset(Dataset):
             return data, torch.tensor(wrong_label, dtype=torch.long)
 
 
+class MixedLabelDataset(Dataset):
+    """混合数据集类，用于同时处理正确标签和错误标签的数据"""
+    def __init__(self, correct_label_dataset, wrong_label_dataset):
+        """
+        Args:
+            correct_label_dataset: 使用正确标签的数据集（insert的数据）
+            wrong_label_dataset: 使用错误标签的数据集（remove的数据，已经是WrongLabelDataset）
+        """
+        self.correct_dataset = correct_label_dataset
+        self.wrong_dataset = wrong_label_dataset
+        self.correct_len = len(correct_label_dataset) if correct_label_dataset is not None else 0
+        self.wrong_len = len(wrong_label_dataset) if wrong_label_dataset is not None else 0
+        
+    def __len__(self):
+        return self.correct_len + self.wrong_len
+    
+    def __getitem__(self, idx):
+        if idx < self.correct_len:
+            # 返回正确标签的数据（insert的数据）
+            if self.correct_dataset is not None:
+                return self.correct_dataset[idx]
+            else:
+                raise IndexError(f"Index {idx} out of range for correct_dataset")
+        else:
+            # 返回错误标签的数据（remove的数据）
+            if self.wrong_dataset is not None:
+                return self.wrong_dataset[idx - self.correct_len]
+            else:
+                raise IndexError(f"Index {idx} out of range for wrong_dataset")
+
+
 def finetune_with_wrong_labels(model, forget_loader, optimizer, criterion, args, num_epochs=5):
     """使用错误标签进行finetune，达到遗忘效果"""
     model.train()
@@ -80,11 +111,107 @@ def finetune_with_correct_labels(model, insert_loader, optimizer, criterion, arg
             optimizer.step()
 
 
+def finetune_on_remove_set(model, remove_loader, args, num_epochs=3):
+    """在Remove Set上使用错误标签进行微调（遗忘效果）"""
+    optimizer = optim.Adam(model.parameters(), lr=args['lr'], weight_decay=5e-4)
+    criterion = nn.CrossEntropyLoss()
+    
+    model.train()
+    for epoch in range(num_epochs):
+        for batch in remove_loader:
+            if isinstance(batch, dict):
+                data = {k: v.to(args['device']) for k, v in batch.items() if k != 'labels'}
+                target = batch['labels'].to(args['device'])
+            else:
+                data, target = batch
+                data, target = data.to(args['device']), target.to(args['device'])
+            
+            optimizer.zero_grad()
+            output = model.forward_propagation(data)
+            loss = criterion(output, target)  # 使用错误标签计算损失
+            loss.backward()
+            optimizer.step()
+
+
+def finetune_on_retain_set(model, retain_loader, args, num_epochs=2):
+    """在retain set上进行微调（使用正确标签）"""
+    optimizer = optim.Adam(model.parameters(), lr=args['lr'], weight_decay=5e-4)
+    criterion = nn.CrossEntropyLoss()
+    
+    model.train()
+    for epoch in range(num_epochs):
+        for batch in retain_loader:
+            if isinstance(batch, dict):
+                data = {k: v.to(args['device']) for k, v in batch.items() if k != 'labels'}
+                target = batch['labels'].to(args['device'])
+            else:
+                data, target = batch
+                data, target = data.to(args['device']), target.to(args['device'])
+            
+            optimizer.zero_grad()
+            output = model.forward_propagation(data)
+            loss = criterion(output, target)
+            loss.backward()
+            optimizer.step()
+
+
+def evaluate_four_sets(model, all_samples, sample_status, remove_indices, insert_indices, args):
+    """评估四个set的准确率：train_acc, test_acc, insert_acc, remove_acc"""
+    train_acc = 0.0
+    test_acc = 0.0
+    insert_acc = 0.0
+    remove_acc = 0.0
+    
+    # 评估training set accuracy：所有状态为1的样本
+    train_set_indices = np.where(sample_status == 1)[0].tolist()
+    if len(train_set_indices) > 0:
+        train_set_dataset = Subset(all_samples, train_set_indices)
+        train_set_loader = DataLoader(
+            train_set_dataset,
+            batch_size=args['batch_size'],
+            shuffle=False
+        )
+        train_acc = model.test_model_acc(train_set_loader)
+    
+    # 评估test set accuracy：所有状态为0的样本
+    test_set_indices = np.where(sample_status == 0)[0].tolist()
+    if len(test_set_indices) > 0:
+        test_set_dataset = Subset(all_samples, test_set_indices)
+        test_set_loader = DataLoader(
+            test_set_dataset,
+            batch_size=args['batch_size'],
+            shuffle=False
+        )
+        test_acc = model.test_model_acc(test_set_loader)
+    
+    # 评估insert set的准确率
+    if len(insert_indices) > 0:
+        insert_dataset = Subset(all_samples, insert_indices)
+        insert_loader_eval = DataLoader(
+            insert_dataset,
+            batch_size=args['batch_size'],
+            shuffle=False
+        )
+        insert_acc = model.test_model_acc(insert_loader_eval)
+    
+    # 评估remove set的准确率
+    if len(remove_indices) > 0:
+        remove_dataset_eval = Subset(all_samples, remove_indices)
+        remove_loader_eval = DataLoader(
+            remove_dataset_eval,
+            batch_size=args['batch_size'],
+            shuffle=False
+        )
+        remove_acc = model.test_model_acc(remove_loader_eval)
+    
+    return train_acc, test_acc, insert_acc, remove_acc
+
+
 def continuous_update_finetune(args):
     print("dataset and net_name:", args['dataset_name'], args['net_name'])
 
     # 参数控制
-    total_unlearn_steps = args.get('total_unlearn_steps', 80)
+    total_unlearn_steps = args.get('total_unlearn_steps', 60)
     update_proportion = args['proportion_of_group_unlearn']  # 0.1% 的数据更新比例
     
     print(f"  -> Total unlearn steps: {total_unlearn_steps}")
@@ -183,58 +310,33 @@ def continuous_update_finetune(args):
         for k in range(total_unlearn_steps):
             print(f'\n  -> Timestamp {k}')
             
-            # 初始化每个timestamp的准确率变量
-            remove_acc = 0.0
-            insert_acc = 0.0
+            # 初始化每个timestamp的变量
+            remove_indices = []
+            insert_indices = []
+            remove_acc_after_remove = 0.0  # Remove操作后的准确率
             
             # 2. Remove操作：从训练集中选择0.1%的数据进行remove
             num_to_remove = max(1, int(len(current_train_indices) * update_proportion))
+            remove_indices = []
             if num_to_remove > 0 and len(current_train_indices) > 0:
                 # 从当前训练集中随机选择要移除的样本
                 remove_indices = random.sample(current_train_indices, min(num_to_remove, len(current_train_indices)))
                 remove_dataset = Subset(all_samples, remove_indices)
-                
                 print(f"    -> Remove: {len(remove_indices)} samples from training set")
-
-                # 使用错误标签进行finetune（遗忘效果）
-                wrong_label_dataset = WrongLabelDataset(remove_dataset, num_classes)
-                forget_loader = DataLoader(
-                    wrong_label_dataset, 
-                    batch_size=args['batch_size'], 
-                    shuffle=True
-                )
-                optimizer = optim.Adam(current_model.parameters(), lr=args['lr'], weight_decay=5e-4)
-                criterion = nn.CrossEntropyLoss()
-                if args['dataset_name']=='news20':
-                    remove_epoch=5
-                else:
-                    remove_epoch=2
-                finetune_with_wrong_labels(current_model, forget_loader, optimizer, criterion, args, num_epochs=remove_epoch)
-                
-                remove_loader_eval = DataLoader(
-                    remove_dataset,
-                    batch_size=args['batch_size'],
-                    shuffle=False
-                )
-                remove_acc = current_model.test_model_acc(remove_loader_eval)
-
-                # 更新状态：将移除的样本状态改为0
-                for idx in remove_indices:
-                    sample_status[idx] = 0
-                
-                # 从当前训练集中移除这些样本
-                current_train_indices = [idx for idx in current_train_indices if idx not in remove_indices]
             
             # 3. Insert操作：从所有状态为0的样本中选择0.1%的数据insert到训练集
             # 包括：1) 原始test_data中状态为0的样本
-            #       2) 从训练集中被remove出来的样本（状态变为0）
-            # 但排除固定unseen的样本
+            #       2) 从训练集中被remove出来的样本（状态变为0，但排除本次remove的样本）
+            # 但排除：1) 固定unseen的样本
+            #        2) 本次remove的样本（防止在同一个timestamp中重新insert）
             available_test_indices = [
                 idx for idx in range(total_samples)
-                if sample_status[idx] == 0 and idx not in fixed_unseen_indices
+                if sample_status[idx] == 0 and idx not in fixed_unseen_indices and idx not in remove_indices
             ]
             num_to_insert = max(1, int(len(current_train_indices) * update_proportion))
             
+            insert_indices = []
+            insert_dataset = None
             if num_to_insert > 0 and len(available_test_indices) >= num_to_insert:
                 # 从可用的test样本中随机选择要插入的样本
                 insert_indices = random.sample(
@@ -242,61 +344,108 @@ def continuous_update_finetune(args):
                     min(num_to_insert, len(available_test_indices))
                 )
                 insert_dataset = Subset(all_samples, insert_indices)
-                
                 print(f"    -> Insert: {len(insert_indices)} samples from test set to training set")
-                
-                # 使用正确标签进行finetune（学习新数据）
-                insert_loader = DataLoader(
-                    insert_dataset,
-                    batch_size=args['batch_size'],
-                    shuffle=True
-                )
-                
-                # Finetune with correct labels
-                optimizer = optim.Adam(current_model.parameters(), lr=args['lr'], weight_decay=5e-4)
-                criterion = nn.CrossEntropyLoss()
-                finetune_with_correct_labels(current_model, insert_loader, optimizer, criterion, args, num_epochs=5)
-
-                # 评估insert set的准确率
-                insert_loader_eval = DataLoader(
-                    insert_dataset,
-                    batch_size=args['batch_size'],
-                    shuffle=False
-                )
-                insert_acc = current_model.test_model_acc(insert_loader_eval)
-
-                # 更新状态：将插入的样本状态改为1，并添加到训练集
-                for idx in insert_indices:
-                    sample_status[idx] = 1
-                current_train_indices.extend(insert_indices)
             else:
                 if num_to_insert > 0 and len(available_test_indices) < num_to_insert:
                     print(f"    -> Skip insert: only {len(available_test_indices)} available samples (need {num_to_insert}, {len(fixed_unseen_indices)} fixed as unseen)")
-                insert_indices = []
-            # 确保固定unseen样本的状态始终为0（保护机制）
-            for idx in fixed_unseen_indices:
+            
+            # 4. 更新状态（在交替训练之前先更新状态）
+            # Remove的样本状态改为0
+            for idx in remove_indices:
                 sample_status[idx] = 0
+            # 从当前训练集中移除这些样本
+            current_train_indices = [idx for idx in current_train_indices if idx not in remove_indices]
             
-            # 直接使用sample_status == 1来构建retain set，确保不包含unseen样本
+            # Insert的样本状态改为1
+            for idx in insert_indices:
+                sample_status[idx] = 1
+            current_train_indices.extend(insert_indices)
+            
+            # 5. 交替进行Remove Set（错误标签）训练和Retain Set（正确标签）Finetune
+            # 设置交替次数
+            num_alternations = args.get('num_alternations', 4)  # 默认交替3次
+            
+            # 准备remove set（使用错误标签）
+            remove_loader = None
+            if len(remove_indices) > 0:
+                remove_dataset = Subset(all_samples, remove_indices)
+                wrong_label_dataset = WrongLabelDataset(remove_dataset, num_classes)
+                remove_loader = DataLoader(
+                    wrong_label_dataset,
+                    batch_size=args['batch_size'],
+                    shuffle=True
+                )
+            
+            # 准备retain set（使用正确标签）
             retain_indices = np.where(sample_status == 1)[0].tolist()
-            current_train_indices = retain_indices  # 同步更新
-            current_train_dataset = Subset(all_samples, retain_indices)
-            
-            # 在retain set上进行refine，恢复模型性能
+            retain_loader = None
             if len(retain_indices) > 0:
+                current_train_dataset = Subset(all_samples, retain_indices)
                 retain_loader = DataLoader(
                     current_train_dataset,
                     batch_size=args['batch_size'],
                     shuffle=True
                 )
-                optimizer = optim.Adam(current_model.parameters(), lr=args['lr'], weight_decay=5e-4)
-                criterion = nn.CrossEntropyLoss()
-                finetune_with_correct_labels(current_model, retain_loader, optimizer, criterion, args, num_epochs=1)
-                print(f"    -> Refined model on retain set ({len(retain_indices)} samples, all with status=1)")
+            
+            # 设置epoch数
+            if args['dataset_name'] == 'news20':
+                remove_epoch = 3
+                retain_epoch = 1
+            else:
+                remove_epoch = 3
+                retain_epoch = 1
+            
+            # 交替训练
+            for alt_iter in range(num_alternations):
+                print(f"    -> Alternation {alt_iter + 1}/{num_alternations}:")
+                
+                # Step 1: 在Remove Set上使用错误标签训练（遗忘效果）
+                if remove_loader is not None:
+                    finetune_on_remove_set(current_model, remove_loader, args, num_epochs=remove_epoch)
+                    print(f"      -> Remove finetune (wrong labels): {len(remove_indices)} samples, {remove_epoch} epochs")
+                    
+                    # 评估四个set的准确率
+                    train_acc, test_acc, insert_acc, remove_acc = evaluate_four_sets(
+                        current_model, all_samples, sample_status, remove_indices, insert_indices, args
+                    )
+                    print(f"      -> After remove finetune - Train: {train_acc:.4f}, Test: {test_acc:.4f}, Insert: {insert_acc:.4f}, Remove: {remove_acc:.4f}")
+                
+                # Step 2: 在Retain Set上使用正确标签finetune（恢复性能）
+                if retain_loader is not None:
+                    finetune_on_retain_set(current_model, retain_loader, args, num_epochs=retain_epoch)
+                    print(f"      -> Retain finetune (correct labels): {len(retain_indices)} samples, {retain_epoch} epochs")
+                    
+                    # 评估四个set的准确率
+                    train_acc, test_acc, insert_acc, remove_acc = evaluate_four_sets(
+                        current_model, all_samples, sample_status, remove_indices, insert_indices, args
+                    )
+                    print(f"      -> After retain finetune - Train: {train_acc:.4f}, Test: {test_acc:.4f}, Insert: {insert_acc:.4f}, Remove: {remove_acc:.4f}")
+            
+            # 保存最后一次评估的准确率（用于后续日志）
+            if len(remove_indices) > 0:
+                _, _, _, remove_acc_after_remove = evaluate_four_sets(
+                    current_model, all_samples, sample_status, remove_indices, insert_indices, args
+                )
+            else:
+                remove_acc_after_remove = 0.0
+            # 确保固定unseen样本的状态始终为0（保护机制）
+            for idx in fixed_unseen_indices:
+                sample_status[idx] = 0
+            
+            # 更新current_train_indices以反映最终状态
+            current_train_indices = np.where(sample_status == 1)[0].tolist()
             
             print(f"    -> Current training set size: {len(current_train_indices)}")
             print(f"    -> Samples in training set (status=1): {np.sum(sample_status == 1)}")
             print(f"    -> Samples not in training set (status=0): {np.sum(sample_status == 0)}")
+            
+            # 6. 在所有交替训练完成后，最终评估四个set的准确率
+            train_acc, test_acc, insert_acc, remove_acc_after_finetune = evaluate_four_sets(
+                current_model, all_samples, sample_status, remove_indices, insert_indices, args
+            )
+            
+            # 打印最终准确率
+            print(f"    -> Final accuracy - Train: {train_acc:.4f}, Test: {test_acc:.4f}, Insert: {insert_acc:.4f}, Remove: {remove_acc_after_finetune:.4f}")
             
             # 4. 更新每个样本的状态历史（记录当前timestamp的状态）
             for i in range(total_samples):
@@ -334,69 +483,40 @@ def continuous_update_finetune(args):
                     labels_list.append(labels.numpy() if isinstance(labels, torch.Tensor) else labels)
                     
                     # 记录样本索引
+                    # DataLoader遍历ConcatDataset时，会按顺序返回样本
+                    # 需要正确计算每个batch中样本的全局索引
                     batch_start_idx = batch_idx * args['batch_size']
                     batch_size_actual = len(labels)
+                    # 对于ConcatDataset，DataLoader会按顺序返回，所以索引是连续的
+                    # 但为了确保正确，我们需要验证：第一个batch的索引应该是0, 1, 2, ...
                     batch_indices = list(range(batch_start_idx, batch_start_idx + batch_size_actual))
                     indices_list.extend(batch_indices)
+                    
+                    # 验证：确保索引在有效范围内
+                    assert max(batch_indices) < total_samples, f"Index {max(batch_indices)} out of range (total_samples={total_samples})"
             
             outputs_current = np.concatenate(outputs_current, axis=0)
             labels_list = np.concatenate(labels_list)
+            indices_array = np.array(indices_list)
             
+
             # 保存到文件
             timestamp_save_path = f"{save_path}/timestamp_{k}/"
             os.makedirs(timestamp_save_path, exist_ok=True)
             
             np.save(f"{timestamp_save_path}/outputs_current.npy", outputs_current)
             np.save(f"{timestamp_save_path}/labels.npy", labels_list)
-            np.save(f"{timestamp_save_path}/sample_indices.npy", np.array(indices_list))
+            np.save(f"{timestamp_save_path}/sample_indices.npy", indices_array)
             
 
             # 保存模型
             torch.save(current_model.state_dict(), f"{timestamp_save_path}/model_state_dict.pth")
-            # 收集打印信息
-            # 评估training set accuracy：所有状态为1的样本都属于training set
-            # 包括：1) 原始训练集中状态为1的样本
-            #       2) 从test set中insert进来的样本（状态变为1）
-            train_set_indices = np.where(sample_status == 1)[0].tolist()
-            if len(train_set_indices) > 0:
-                train_set_dataset = Subset(all_samples, train_set_indices)
-                train_set_loader = DataLoader(
-                    train_set_dataset,
-                    batch_size=args['batch_size'],
-                    shuffle=False
-                )
-                train_acc = current_model.test_model_acc(train_set_loader)
-            else:
-                train_acc = 0.0
-                print(f"    -> Warning: No training set samples (all samples are in test set) at timestamp {k}")
             
-            # 评估test set accuracy：所有状态为0的样本都属于test set
-            # 包括：1) 原始test_data中状态为0的样本
-            #       2) 从训练集中被remove出来的样本（状态变为0）
-            test_set_indices = np.where(sample_status == 0)[0].tolist()
-            if len(test_set_indices) > 0:
-                test_set_dataset = Subset(all_samples, test_set_indices)
-                test_set_loader = DataLoader(
-                    test_set_dataset,
-                    batch_size=args['batch_size'],
-                    shuffle=False
-                )
-                test_acc = current_model.test_model_acc(test_set_loader)
-            else:
-                test_acc = 0.0
-                print(f"    -> Warning: No test set samples (all samples are in training set) at timestamp {k}")
-            
+            # 记录日志
             log_entry = f"Timestamp {k}:\n"
-            log_entry += f"  -> Training set accuracy: {train_acc:.4f}\n"
-            log_entry += f"  -> Test set accuracy: {test_acc:.4f}\n"
-            log_entry += f"  -> Insert set accuracy after learning: {insert_acc:.4f}\n"
-            log_entry += f"  -> Remove set accuracy after unlearning: {remove_acc:.4f}\n"
+            log_entry += f"  -> Final accuracy - Train: {train_acc:.4f}, Test: {test_acc:.4f}, Insert: {insert_acc:.4f}, Remove: {remove_acc_after_finetune:.4f}\n"
+            log_entry += f"  -> Alternations: {num_alternations} (remove: {remove_epoch} epochs, retain: {retain_epoch} epochs)\n"
             timestamp_logs.append(log_entry)
-            
-            print(f"    -> Training set accuracy: {train_acc:.4f}")
-            print(f"    -> Test set accuracy: {test_acc:.4f}")
-            print(f"    -> Insert set accuracy after learning: {insert_acc:.4f}")
-            print(f"    -> Remove set accuracy after unlearning: {remove_acc:.4f}")
         
         # 6. 在trial结束后，统一保存样本状态历史
         # 转换为numpy数组：shape为 (total_samples, total_timestamps+1)
@@ -407,23 +527,21 @@ def continuous_update_finetune(args):
         print(f"      Shape: {sample_status_array.shape} (samples x timestamps)")
         
         # 6.5. 转换sample_status_history为包含breakpoint信息的状态编码
-        # 转换规则：
-        # 0->0: 0 (连续unseen，不是breakpoint)
-        # 1->1: 1 (连续retain，不是breakpoint)
-        # 0->1: 2 (新增点，breakpoint)
-        # 1->0: 3 (移除点，breakpoint)
+
         num_timestamps_with_initial = sample_status_array.shape[1]  # 包含初始状态
         num_timestamps = num_timestamps_with_initial - 1  # 排除初始状态
         
         # 初始化转换后的状态数组：shape为 (total_samples, num_timestamps)
-        # 只转换timestamp 1到n（因为需要比较前一个timestamp）
+        # converted_status_array[i, k] 对应从timestamp k-1到timestamp k的转换（k=0时是从初始状态到timestamp 0）
         converted_status_array = np.zeros((total_samples, num_timestamps), dtype=int)
         
         for i in range(total_samples):
-            for k in range(1, num_timestamps_with_initial):  # 从timestamp 1开始
-                prev_status = sample_status_array[i, k-1]  # 前一个timestamp的状态
-                curr_status = sample_status_array[i, k]     # 当前timestamp的状态
+            for k in range(1, num_timestamps_with_initial):  # k从1开始，对应timestamp k-1
+                prev_status = sample_status_array[i, k-1]  # 前一个状态（初始状态或timestamp k-2的状态）
+                curr_status = sample_status_array[i, k]     # 当前状态（timestamp k-1的状态）
                 
+                # converted_status_array[i, k-1] 对应从状态k-1到状态k的转换
+                # 即从timestamp k-2到timestamp k-1的转换（k=1时是从初始状态到timestamp 0）
                 if prev_status == 0 and curr_status == 0:
                     converted_status_array[i, k-1] = 0  # 连续unseen
                 elif prev_status == 1 and curr_status == 1:
@@ -435,10 +553,7 @@ def continuous_update_finetune(args):
         
         # 保存转换后的状态数组
         np.save(f"{save_path}/sample_status_converted.npy", converted_status_array)
-        print(f"  -> Saved converted status history to {save_path}/sample_status_converted.npy")
-        print(f"      Shape: {converted_status_array.shape} (samples x timestamps)")
-        print(f"      Status encoding: 0=unseen, 1=retain, 2=insert(breakpoint), 3=remove(breakpoint)")
-        
+
         # 统计转换后的状态分布（用于后续统计）
         converted_stats = {
             0: np.sum(converted_status_array == 0),
@@ -482,14 +597,22 @@ def continuous_update_finetune(args):
         
         # 保存breakpoint索引
         # 对于每个样本，记录breakpoint的timestamp和类型
+        # 注意：converted_status_array[i, k]对应从timestamp k-1到timestamp k的转换
+        # 所以如果converted_status_array[i, k] == 2，表示在timestamp k发生了insert
         breakpoint_indices_dict = {}
         for i in range(total_samples):
-            insert_indices = np.where(converted_status_array[i, :] == 2)[0].tolist()  # insert breakpoint的timestamp
-            remove_indices = np.where(converted_status_array[i, :] == 3)[0].tolist()  # remove breakpoint的timestamp
-            if len(insert_indices) > 0 or len(remove_indices) > 0:
+            # 找到所有insert breakpoint的位置（在converted_status_array中的列索引）
+            insert_positions = np.where(converted_status_array[i, :] == 2)[0].tolist()
+            # 找到所有remove breakpoint的位置
+            remove_positions = np.where(converted_status_array[i, :] == 3)[0].tolist()
+            
+            insert_timestamps = insert_positions  # converted_status_array的列索引k对应timestamp k
+            remove_timestamps = remove_positions  # converted_status_array的列索引k对应timestamp k
+            
+            if len(insert_timestamps) > 0 or len(remove_timestamps) > 0:
                 breakpoint_indices_dict[i] = {
-                    'insert': insert_indices,
-                    'remove': remove_indices
+                    'insert': insert_timestamps,
+                    'remove': remove_timestamps
                 }
         
         # 保存breakpoint索引到文件
@@ -498,10 +621,7 @@ def continuous_update_finetune(args):
         np.save(breakpoint_indices_file, breakpoint_indices_dict, allow_pickle=True)
         print(f"  -> Saved breakpoint indices to {breakpoint_indices_file}")
         
-        # 打印统计结果
-        print(f"\n  -> Converted Status Pattern Statistics (across {num_timestamps} timestamps):")
-        print(f"      {'Pattern':<40} {'Count':<15} {'Percentage':<15}")
-        print(f"      {'-' * 70}")
+
         
         # No breakpoint情况
         all_unseen_count = pattern_statistics['all_unseen']
@@ -522,8 +642,7 @@ def continuous_update_finetune(args):
             num_insert = int(parts[0])
             num_remove = int(parts[2])
             pattern_desc = f"{num_insert} insert, {num_remove} remove breakpoints"
-            print(f"      {pattern_desc:<40} {count:<15} {percentage:>13.2f}%")
-        
+
         # 保存主要统计结果到文件（基于转换后的状态）
         main_stats_file_path = f"{save_path}/status_statistics.txt"
         with open(main_stats_file_path, 'w', encoding='utf-8') as f:
