@@ -119,3 +119,30 @@ def split_dataset3(train_dataset, random):
 
 
     return target_dataset, shadow_dataset
+
+
+def split_dataset4(train_dataset, random):
+    # 检查是否是Hugging Face数据集（有dataset属性）
+    if hasattr(train_dataset, 'dataset'):
+        # 对于SST5Dataset这样的包装器，获取原始数据集
+        original_dataset = train_dataset.dataset
+        total_size = len(original_dataset)
+
+        # 生成索引并分割
+        indices = list(range(total_size))
+        target_indices, shadow_indices = train_test_split(indices, test_size=0.5, random_state=random)
+
+        # 转换为Python int类型
+        target_indices = [int(idx) for idx in target_indices]
+        shadow_indices = [int(idx) for idx in shadow_indices]
+
+        target_dataset = Subset(train_dataset, target_indices)
+        shadow_dataset = Subset(train_dataset, shadow_indices)
+
+
+
+    else:
+        # 对于普通PyTorch数据集，使用原来的方法
+        target_dataset, shadow_dataset = train_test_split(train_dataset, test_size=0.5, random_state=random)
+
+    return target_dataset, shadow_dataset

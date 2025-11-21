@@ -5,16 +5,20 @@ import random
 from collections import defaultdict
 
 
-def visualize_finetune_results(args, trial=0):
+def visualize_finetune_results(args, trial=0, sample_type='insert_remove'):
     """
     可视化finetune.py保存的结果
     
     Args:
         args: 参数字典，包含net_name, dataset_name, proportion_of_group_unlearn等
         trial: trial编号，默认为0
+        sample_type: 样本类型选择，可选值：
+            - 'insert_remove': 只有一个insert和一个remove的样本（默认）
+            - 'unseen': 没有insert和remove的unseen样本（状态始终为0）
+            - 'retain': 没有insert和remove的retain样本（状态始终为1）
     """
     # 构建保存路径
-    save_path = os.getcwd() + f"/save3/continuous_finetune/{args['net_name']}/{args['dataset_name']}/0.01/target/{trial}"
+    save_path = os.getcwd() + f"/save/continuous_finetune/{args['net_name']}/{args['dataset_name']}/0.01/target/{trial}"
     
     print(f"Loading data from: {save_path}")
     
@@ -27,18 +31,60 @@ def visualize_finetune_results(args, trial=0):
     breakpoint_indices_dict = np.load(breakpoint_indices_file, allow_pickle=True).item()
     print(f"  -> Loaded breakpoint indices for {len(breakpoint_indices_dict)} samples")
     
-    # 2. 找到只有一个insert和一个remove的样本
+    # 2. 根据sample_type选择不同的样本
     target_samples = []
-    for sample_id, bp_info in breakpoint_indices_dict.items():
-        num_insert = len(bp_info['insert'])
-        num_remove = len(bp_info['remove'])
-        if num_insert == 1 and num_remove == 1:
-            target_samples.append(sample_id)
     
-    print(f"  -> Found {len(target_samples)} samples with exactly 1 insert and 1 remove")
+    if sample_type == 'insert_remove':
+        # 找到只有一个insert和一个remove的样本
+        for sample_id, bp_info in breakpoint_indices_dict.items():
+            num_insert = len(bp_info['insert'])
+            num_remove = len(bp_info['remove'])
+            if num_insert == 1 and num_remove == 1:
+                target_samples.append(sample_id)
+        print(f"  -> Found {len(target_samples)} samples with exactly 1 insert and 1 remove")
+    
+    elif sample_type in ['unseen', 'retain']:
+        # 读取sample_status_history.npy来确定每个样本的最终状态
+        status_history_file = f"{save_path}/sample_status_history.npy"
+        if not os.path.exists(status_history_file):
+            print(f"Error: {status_history_file} not found!")
+            return
+        
+        sample_status_history = np.load(status_history_file)  # shape: (total_samples, num_timestamps)
+        total_samples = sample_status_history.shape[0]
+        num_timestamps = sample_status_history.shape[1]
+        
+        # 获取每个样本的最终状态（最后一个timestamp的状态）
+        final_status = sample_status_history[:, -1]  # shape: (total_samples,)
+        
+        # 找到没有insert和remove的样本（不在breakpoint_indices_dict中，或者insert和remove都为空）
+        for sample_id in range(total_samples):
+            # 检查是否有breakpoint操作
+            has_insert = False
+            has_remove = False
+            
+            if sample_id in breakpoint_indices_dict:
+                bp_info = breakpoint_indices_dict[sample_id]
+                has_insert = len(bp_info['insert']) > 0
+                has_remove = len(bp_info['remove']) > 0
+            
+            # 如果没有insert和remove操作
+            if not has_insert and not has_remove:
+                if sample_type == 'unseen' and final_status[sample_id] == 0:
+                    # unseen样本：最终状态为0
+                    target_samples.append(sample_id)
+                elif sample_type == 'retain' and final_status[sample_id] == 1:
+                    # retain样本：最终状态为1
+                    target_samples.append(sample_id)
+        
+        print(f"  -> Found {len(target_samples)} {sample_type} samples with no insert/remove operations")
+    
+    else:
+        print(f"Error: Unknown sample_type '{sample_type}'. Choose from: 'insert_remove', 'unseen', 'retain'")
+        return
     
     if len(target_samples) == 0:
-        print("  -> No samples found matching the criteria!")
+        print(f"  -> No samples found matching the criteria (type: {sample_type})!")
         return
     
     # 3. 随机选择10个样本
@@ -68,9 +114,12 @@ def visualize_finetune_results(args, trial=0):
             break
         
         # 获取该样本的breakpoint信息
-        bp_info = breakpoint_indices_dict[sample_id]
-        insert_timestamp = bp_info['insert'][0] if len(bp_info['insert']) > 0 else None
-        remove_timestamp = bp_info['remove'][0] if len(bp_info['remove']) > 0 else None
+        insert_timestamp = None
+        remove_timestamp = None
+        if sample_id in breakpoint_indices_dict:
+            bp_info = breakpoint_indices_dict[sample_id]
+            insert_timestamp = bp_info['insert'][0] if len(bp_info['insert']) > 0 else None
+            remove_timestamp = bp_info['remove'][0] if len(bp_info['remove']) > 0 else None
         
         # 收集该样本在所有timestamp下的true label probability
         timestamps = []
@@ -147,21 +196,24 @@ def visualize_finetune_results(args, trial=0):
     plt.tight_layout()
     
     # 保存图片
-    output_dir = os.getcwd() + f"/figures/continuous_finetune/{args['net_name']}/{args['dataset_name']}/0.01/"
+    output_dir = os.getcwd() + f"/figures/continuous_finetune/{args['net_name']}/{args['dataset_name']}/0.01/{sample_type}"
     os.makedirs(output_dir, exist_ok=True)
-    output_file = f"{output_dir}/trial_{trial}_visualization.png"
+    output_file = f"{output_dir}/trial_{trial}_{sample_type}_visualization.png"
     plt.savefig(output_file, dpi=300, bbox_inches='tight')
     print(f"\n  -> Saved visualization to {output_file}")
     plt.close()
     
     # 6. 为每个样本单独保存一个图
-    individual_output_dir = f"{output_dir}/trial_{trial}_individual/"
+    individual_output_dir = f"{output_dir}/trial_{trial}_{sample_type}_individual/"
     os.makedirs(individual_output_dir, exist_ok=True)
     
     for sample_id in selected_samples:
-        bp_info = breakpoint_indices_dict[sample_id]
-        insert_timestamp = bp_info['insert'][0] if len(bp_info['insert']) > 0 else None
-        remove_timestamp = bp_info['remove'][0] if len(bp_info['remove']) > 0 else None
+        insert_timestamp = None
+        remove_timestamp = None
+        if sample_id in breakpoint_indices_dict:
+            bp_info = breakpoint_indices_dict[sample_id]
+            insert_timestamp = bp_info['insert'][0] if len(bp_info['insert']) > 0 else None
+            remove_timestamp = bp_info['remove'][0] if len(bp_info['remove']) > 0 else None
         
         timestamps = []
         true_label_probs = []
@@ -226,18 +278,20 @@ if __name__ == '__main__':
     import sys
     if len(sys.argv) > 1:
         # 从命令行参数读取
-        # 格式: python visualize_finetune.py net_name dataset_name proportion trial
+        # 格式: python visualize_finetune.py net_name dataset_name proportion trial [sample_type]
+        # sample_type可选: 'insert_remove', 'unseen', 'retain'
         net_name = sys.argv[1]
         dataset_name = sys.argv[2]
         proportion = float(sys.argv[3])
         trial = int(sys.argv[4]) if len(sys.argv) > 4 else 0
+        sample_type = sys.argv[5] if len(sys.argv) > 5 else 'insert_remove'
         
         args = {
             'net_name': net_name,
             'dataset_name': dataset_name,
             'proportion_of_group_unlearn': proportion
         }
-        visualize_finetune_results(args, trial=trial)
+        visualize_finetune_results(args, trial=trial, sample_type=sample_type)
     else:
         # 默认参数（需要根据实际情况修改）
         args = {
@@ -245,5 +299,6 @@ if __name__ == '__main__':
             'dataset_name': 'sst5',
             'proportion_of_group_unlearn': 0.01
         }
-        visualize_finetune_results(args, trial=0)
+        # 可以选择不同的sample_type: 'insert_remove', 'unseen', 'retain'
+        visualize_finetune_results(args, trial=0, sample_type='insert_remove')
 
