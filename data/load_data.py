@@ -185,7 +185,7 @@ def get_tokenizer_name(model_name=None):
     return model_tokenizer_map.get(model_name, "EleutherAI/pythia-70m")
 
 
-def get_data(name, augment=True, model_name=None, **kwargs):
+def get_data(name,  model_name=None,augment=True, **kwargs):
     """
     加载数据集
     Args:
