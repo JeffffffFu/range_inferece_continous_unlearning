@@ -387,7 +387,11 @@ def train_single_model(args, train_dataset, test_dataset, num_classes, trial, to
             print(f"    {model_prefix} -> Skip model update: all samples in cooldown (no remove/insert operations)")
         else:
             # 交替进行Remove Set（错误标签）训练和Retain Set（正确标签）Finetune
-            num_alternations = args.get('num_alternations', 4)
+            if args['dataset_name'] == 'sst5':
+                num_alternations = args.get('num_alternations', 4)
+
+            else:
+                num_alternations = args.get('num_alternations', 8)
 
             # 准备remove set（使用错误标签）
             remove_loader = None
