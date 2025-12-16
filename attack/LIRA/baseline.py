@@ -239,7 +239,7 @@ def baseline(args):
 
 
 def baseline_prep(args):
-    train_data, test_data = get_data(args['dataset_name'])
+    train_data, test_data = get_data(args['dataset_name'], model_name=args.get('net_name'))
 
     target_m,  shadow_m, shadow_um = split_dataset(
         train_data, args['random'])
@@ -253,7 +253,7 @@ def baseline_prep(args):
     # members
     for t in tqdm(range(min(args['trials'], 100)), desc='preparing members'): #todo: remove limit
 
-        train_data, test_data = get_data(args['dataset_name'])
+        train_data, test_data = get_data(args['dataset_name'], model_name=args.get('net_name'))
         save_path = os.getcwd() + f"/save/{args['net_name']}/scratch/{args['dataset_name']}2/{args['num_epochs']}/{args['lr']}/{t}//"
         if os.path.exists(save_path) is False:
             print("skip! No such file or directory: ", save_path)

@@ -18,11 +18,11 @@ def parameter_parser():
     parser.add_argument('--random', type=int, default=0)
     ######################### target model related parameters ################################
     parser.add_argument('--net_name', type=str, default='resnet18',
-                        choices=['DT', 'MLP', 'LR', 'RF', 'LRTorch', 'MLPTorch', 'simple_cnn', 'resnet18', 'resnet20','vgg','resnet18_dp','resnet50', 'densenet','CNN_MNIST','simple_cnn_dropout','pythia70m','pythia70m_dropout','roberta','opt13b'])
+                        choices=['DT', 'MLP', 'LR', 'RF', 'LRTorch', 'MLPTorch', 'simple_cnn', 'resnet18', 'resnet20','vgg','resnet18_dp','resnet50', 'densenet','CNN_MNIST','simple_cnn_dropout','pythia70m','pythia70m_dropout','roberta','opt13b','gpt2'])
     # parser.add_argument('--attack_model', type=str, default='DT',
     #                     choices=['DT', 'MLP', 'LR', 'RF'])
     parser.add_argument('--U_method', type=str, default='None',
-                        choices=['retrain', 'sisa','GA','sparsity','IF','fisher','scrub','sisa','retrain_dp','certified','NegGrad','NPO','None','continuous_unlearn_retrain','continuous_unlearn_NPO','continuous_unlearn_GA','all','continuous_update_finetune','continuous_update_finetune2'])
+                        choices=['retrain', 'sisa','GA','sparsity','IF','fisher','scrub','sisa','retrain_dp','certified','NegGrad','NPO','None','continuous_unlearn_retrain','continuous_unlearn_NPO','continuous_unlearn_GA','all','continuous_update_finetune','continuous_update_finetune_mutiple_update'])
     parser.add_argument('--retrain', type=int, default=0)
     parser.add_argument('--pre_train', type=str, default='both',choices=['both','target', 'shadow'])
     parser.add_argument('--attack_method', type=str, default='None',

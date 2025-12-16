@@ -67,7 +67,7 @@ def U_LIRA_load(
     load_path = os.getcwd() + f"/save/{args['net_name']}/{args['U_method']}/{args['dataset_name']}/{args['num_epochs']}/{args['lr']}/{t}//"
     device= torch.load(f'{load_path}/device.pth')
     args['device'] = device
-    train_data, test_data = get_data(args['dataset_name'])
+    train_data, test_data = get_data(args['dataset_name'], model_name=args.get('net_name'))
     random = torch.load(f'{load_path}/random_seed.pth')
     target_m,  shadow_m, shadow_um = split_dataset(train_data, random)
 
@@ -159,7 +159,7 @@ def U_LIRA_load_for_three_domain(
     load_path = os.getcwd() + f"/save/{args['net_name']}/{args['U_method']}/{args['dataset_name']}/{args['num_epochs']}/{args['lr']}/{t}//"
     device = torch.load(f'{load_path}/device.pth')
     args['device'] = device
-    train_data, test_data = get_data(args['dataset_name'])
+    train_data, test_data = get_data(args['dataset_name'], model_name=args.get('net_name'))
     random = torch.load(f'{load_path}/random_seed.pth')
     target_m,  shadow_m, shadow_um = split_dataset(train_data, random)
 

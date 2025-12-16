@@ -23,7 +23,7 @@ def example_custom_paths():
     
     # 使用get_data函数
     try:
-        train_set, test_set = get_data("sst5")
+        train_set, test_set = get_data("sst5", model_name="pythia70m")
         print(f"✓ 使用get_data成功加载，训练集大小: {len(train_set)}")
     except Exception as e:
         print(f"✗ 使用get_data失败: {e}")

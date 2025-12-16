@@ -162,7 +162,6 @@ SHAPES = {
     "rte": (256, 1, 1),
     "ag_news": (256, 1, 1)
 }
-
 def get_tokenizer_name(model_name=None):
     """
     根据模型名称返回对应的tokenizer名称
@@ -181,6 +180,8 @@ def get_tokenizer_name(model_name=None):
         "roberta_dropout": "roberta-base",
         "opt13b": "facebook/opt-1.3b",
         "opt13b_dropout": "facebook/opt-1.3b",
+        "gpt2": "gpt2",
+        "gpt2_dropout": "gpt2",
     }
     return model_tokenizer_map.get(model_name, "EleutherAI/pythia-70m")
 

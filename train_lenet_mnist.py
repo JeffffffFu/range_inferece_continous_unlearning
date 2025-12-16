@@ -86,7 +86,7 @@ def main():
     
     # 超参数设置
     batch_size = 512
-    learning_rate = 0.001
+    learning_rate = 0.1
     num_epochs = 10
     num_classes = 10
     
@@ -143,7 +143,7 @@ def main():
     
     # 损失函数和优化器
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+    optimizer = optim.SGD(model.parameters(), lr=learning_rate)
     
     # 训练循环
     print(f"\nstart to training，total {num_epochs} epoch...")
