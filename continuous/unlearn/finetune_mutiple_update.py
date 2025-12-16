@@ -209,7 +209,7 @@ def evaluate_four_sets(model, all_samples, sample_status, remove_indices, insert
     return train_acc, test_acc, insert_acc, remove_acc
 
 
-def train_single_model(args, train_dataset, test_dataset, num_classes, trial, total_unlearn_steps,is_shadow=False):
+def train_single_model_mutiple_update(args, train_dataset, test_dataset, num_classes, trial, total_unlearn_steps,is_shadow=False):
     """
     训练单个模型（target或shadow）的连续更新finetune过程
 
@@ -265,7 +265,7 @@ def train_single_model(args, train_dataset, test_dataset, num_classes, trial, to
     current_model.load_state_dict(original_model.state_dict())
 
     # 保存路径
-    save_path = os.getcwd() + f"/save/continuous_finetune/{args['net_name']}/{args['dataset_name']}/{args['proportion_of_group_unlearn']}/{model_type}/{trial}/"
+    save_path = os.getcwd() + f"/save/{args['U_method']}/{args['net_name']}/{args['dataset_name']}/{args['proportion_of_group_unlearn']}/{model_type}/{trial}/"
     os.makedirs(save_path, exist_ok=True)
 
     # 初始化存储结构：二维list存储每个样本在每个timestamp的状态
@@ -273,33 +273,9 @@ def train_single_model(args, train_dataset, test_dataset, num_classes, trial, to
     for i in range(total_samples):
         sample_status_history.append([sample_status[i]])  # 初始状态
 
-    # 固定至少200个样本始终保持在unseen状态（不会被insert）
-    min_fixed_unseen = 200  # 最少200个样本
-    num_fixed_unseen = max(min_fixed_unseen, int(total_samples * 0.01))  # 至少200个，或1%的样本
-    all_indices = list(range(total_samples))
-    initial_unseen_indices = np.where(sample_status == 0)[0].tolist()
-
-    if len(initial_unseen_indices) >= num_fixed_unseen:
-        fixed_unseen_indices = set(random.sample(initial_unseen_indices, num_fixed_unseen))
-    else:
-        fixed_unseen_indices = set(random.sample(initial_unseen_indices, len(initial_unseen_indices)))
-        remaining_needed = num_fixed_unseen - len(fixed_unseen_indices)
-        other_indices = [idx for idx in all_indices if idx not in fixed_unseen_indices]
-        additional_fixed = random.sample(other_indices, min(remaining_needed, len(other_indices)))
-        fixed_unseen_indices.update(additional_fixed)
-        for idx in additional_fixed:
-            sample_status[idx] = 0
-            if idx in current_train_indices:
-                current_train_indices.remove(idx)
-    print(
-        f"  {model_prefix} -> Fixed {len(fixed_unseen_indices)} samples ({len(fixed_unseen_indices) / total_samples * 100:.2f}%) to remain unseen permanently (minimum: {min_fixed_unseen})")
-
-    # 更新状态历史记录，反映fixed_unseen样本的状态变化
-    for i in range(total_samples):
-        sample_status_history[i][0] = sample_status[i]  # 更新初始状态
-
-    # 更新当前训练集，排除fixed_unseen样本
-    current_train_indices = [idx for idx in current_train_indices if idx not in fixed_unseen_indices]
+    # 不再固定样本保持在unseen状态（允许所有样本参与insert/remove操作）
+    fixed_unseen_indices = set()  # 空集，不固定任何样本
+    print(f"  {model_prefix} -> No fixed unseen samples (all samples can participate in insert/remove operations)")
     current_train_dataset = Subset(all_samples, current_train_indices)
 
     # 初始化冷却期跟踪：分别记录每个样本最后一次insert和remove的timestamp
@@ -311,6 +287,16 @@ def train_single_model(args, train_dataset, test_dataset, num_classes, trial, to
     insert_to_remove_cooldown = args.get('insert_to_remove_cooldown', 30)  # insert后需要隔30个timestamp才能remove
     remove_to_insert_cooldown = args.get('remove_to_insert_cooldown', 30)  # remove后需要隔30个timestamp才能insert
 
+    # 跟踪每个样本的操作次数，用于优先选择操作次数少的样本
+    sample_insert_count = {i: 0 for i in range(total_samples)}  # 记录每个样本的insert次数
+    sample_remove_count = {i: 0 for i in range(total_samples)}  # 记录每个样本的remove次数
+    
+    # 最大操作数量倍数：允许的最大操作数量是update_proportion的倍数
+    # 这样可以充分利用可用样本，但不会操作过多
+    max_operation_multiplier = args.get('max_operation_multiplier', 3)  # 默认最多操作3倍update_proportion的样本
+    # 是否启用优先选择策略（优先选择操作次数少的样本）
+    use_priority_selection = args.get('use_priority_selection', True)  # 默认启用
+
     timestamp_logs = []
 
     # 连续更新学习
@@ -321,10 +307,9 @@ def train_single_model(args, train_dataset, test_dataset, num_classes, trial, to
         remove_indices = []
         insert_indices = []
 
-        # 2. Remove操作：从训练集中选择0.1%的数据进行remove
+        # 2. Remove操作：从训练集中选择数据进行remove
         # 排除在冷却期内的样本（insert后需要隔30个timestamp才能remove）
-        num_to_remove = max(1, int(len(current_train_indices) * update_proportion))
-        if num_to_remove > 0 and len(current_train_indices) > 0:
+        if len(current_train_indices) > 0:
             # 排除在冷却期内的样本
             # 如果从未被insert过，或者距离上次insert已经超过或等于insert_to_remove_cooldown个timestamp，则可以remove
             eligible_for_remove = [
@@ -332,14 +317,33 @@ def train_single_model(args, train_dataset, test_dataset, num_classes, trial, to
                 if last_insert_timestamp[idx] is None or (k - last_insert_timestamp[idx] >= insert_to_remove_cooldown)
             ]
 
-            if len(eligible_for_remove) >= num_to_remove:
-                remove_indices = random.sample(eligible_for_remove, min(num_to_remove, len(eligible_for_remove)))
-                print(f"    {model_prefix} -> Remove: {len(remove_indices)} samples from training set")
+            if len(eligible_for_remove) > 0:
+                # 计算基础操作数量和最大操作数量
+                base_num_to_remove = max(1, int(len(current_train_indices) * update_proportion))
+                max_num_to_remove = max(base_num_to_remove, int(len(current_train_indices) * update_proportion * max_operation_multiplier))
+                
+                # 动态调整：尽可能多操作，但不超过可用样本数和最大限制
+                num_to_remove = min(len(eligible_for_remove), max_num_to_remove)
+                
+                # 优先选择策略：优先选择remove次数少的样本
+                if use_priority_selection and len(eligible_for_remove) > num_to_remove:
+                    # 按remove次数排序，优先选择remove次数少的样本
+                    eligible_for_remove_sorted = sorted(eligible_for_remove, key=lambda idx: sample_remove_count[idx])
+                    remove_indices = eligible_for_remove_sorted[:num_to_remove]
+                else:
+                    # 随机选择
+                    remove_indices = random.sample(eligible_for_remove, num_to_remove)
+                
+                # 更新remove计数
+                for idx in remove_indices:
+                    sample_remove_count[idx] += 1
+                
+                print(f"    {model_prefix} -> Remove: {len(remove_indices)} samples from training set (eligible: {len(eligible_for_remove)}, base: {base_num_to_remove}, max: {max_num_to_remove})")
             else:
                 print(
-                    f"    {model_prefix} -> Skip remove: only {len(eligible_for_remove)} eligible samples (need {num_to_remove}, {len(current_train_indices) - len(eligible_for_remove)} in cooldown after insert)")
+                    f"    {model_prefix} -> Skip remove: all {len(current_train_indices)} samples in cooldown after insert")
 
-        # 3. Insert操作：从所有状态为0的样本中选择0.1%的数据insert到训练集
+        # 3. Insert操作：从所有状态为0的样本中选择数据insert到训练集
         # 包括：1) 原始test_dataset中状态为0的样本
         #       2) 从训练集中被remove出来的样本（状态变为0，但排除本次remove的样本）
         # 但排除：1) 固定unseen的样本
@@ -352,18 +356,34 @@ def train_single_model(args, train_dataset, test_dataset, num_classes, trial, to
                and idx not in remove_indices
                and (last_remove_timestamp[idx] is None or (k - last_remove_timestamp[idx] >= remove_to_insert_cooldown))
         ]
-        num_to_insert = max(1, int(len(current_train_indices) * update_proportion))
 
-        if num_to_insert > 0 and len(available_test_indices) >= num_to_insert:
-            insert_indices = random.sample(
-                available_test_indices,
-                min(num_to_insert, len(available_test_indices))
-            )
-            print(f"    {model_prefix} -> Insert: {len(insert_indices)} samples from test set to training set")
+        if len(available_test_indices) > 0:
+            # 计算基础操作数量和最大操作数量（基于当前训练集大小）
+            # 注意：这里使用更新后的current_train_indices长度（已减去remove的样本）
+            current_train_size_after_remove = len(current_train_indices) - len(remove_indices)
+            base_num_to_insert = max(1, int(current_train_size_after_remove * update_proportion))
+            max_num_to_insert = max(base_num_to_insert, int(current_train_size_after_remove * update_proportion * max_operation_multiplier))
+            
+            # 动态调整：尽可能多操作，但不超过可用样本数和最大限制
+            num_to_insert = min(len(available_test_indices), max_num_to_insert)
+            
+            # 优先选择策略：优先选择insert次数少的样本
+            if use_priority_selection and len(available_test_indices) > num_to_insert:
+                # 按insert次数排序，优先选择insert次数少的样本
+                available_test_indices_sorted = sorted(available_test_indices, key=lambda idx: sample_insert_count[idx])
+                insert_indices = available_test_indices_sorted[:num_to_insert]
+            else:
+                # 随机选择
+                insert_indices = random.sample(available_test_indices, num_to_insert)
+            
+            # 更新insert计数
+            for idx in insert_indices:
+                sample_insert_count[idx] += 1
+            
+            print(f"    {model_prefix} -> Insert: {len(insert_indices)} samples from test set to training set (eligible: {len(available_test_indices)}, base: {base_num_to_insert}, max: {max_num_to_insert})")
         else:
-            if num_to_insert > 0 and len(available_test_indices) < num_to_insert:
-                print(
-                    f"    {model_prefix} -> Skip insert: only {len(available_test_indices)} available samples (need {num_to_insert}, {len(fixed_unseen_indices)} fixed as unseen)")
+            print(
+                f"    {model_prefix} -> Skip insert: no available samples (all in cooldown after remove)")
 
         # 4. 更新状态（在交替训练之前先更新状态）
         # Remove的样本状态改为0
@@ -435,8 +455,10 @@ def train_single_model(args, train_dataset, test_dataset, num_classes, trial, to
                     train_acc, test_acc, insert_acc, remove_acc = evaluate_four_sets(
                         current_model, all_samples, sample_status, remove_indices, insert_indices, args
                     )
+                    insert_acc_str = f"{insert_acc:.4f} (n={len(insert_indices)})" if len(insert_indices) > 0 else "N/A (n=0)"
+                    remove_acc_str = f"{remove_acc:.4f} (n={len(remove_indices)})" if len(remove_indices) > 0 else "N/A (n=0)"
                     print(
-                        f"      {model_prefix} -> After remove finetune - Train: {train_acc:.4f}, Test: {test_acc:.4f}, Insert: {insert_acc:.4f}, Remove: {remove_acc:.4f}")
+                        f"      {model_prefix} -> After remove finetune - Train: {train_acc:.4f}, Test: {test_acc:.4f}, Insert: {insert_acc_str}, Remove: {remove_acc_str}")
 
                 # Step 2: 在Retain Set上使用正确标签finetune（恢复性能）
                 if retain_loader is not None:
@@ -447,8 +469,10 @@ def train_single_model(args, train_dataset, test_dataset, num_classes, trial, to
                     train_acc, test_acc, insert_acc, remove_acc = evaluate_four_sets(
                         current_model, all_samples, sample_status, remove_indices, insert_indices, args
                     )
+                    insert_acc_str = f"{insert_acc:.4f} (n={len(insert_indices)})" if len(insert_indices) > 0 else "N/A (n=0)"
+                    remove_acc_str = f"{remove_acc:.4f} (n={len(remove_indices)})" if len(remove_indices) > 0 else "N/A (n=0)"
                     print(
-                        f"      {model_prefix} -> After retain finetune - Train: {train_acc:.4f}, Test: {test_acc:.4f}, Insert: {insert_acc:.4f}, Remove: {remove_acc:.4f}")
+                        f"      {model_prefix} -> After retain finetune - Train: {train_acc:.4f}, Test: {test_acc:.4f}, Insert: {insert_acc_str}, Remove: {remove_acc_str}")
 
         # 确保固定unseen样本的状态始终为0（保护机制）
         for idx in fixed_unseen_indices:
@@ -467,8 +491,10 @@ def train_single_model(args, train_dataset, test_dataset, num_classes, trial, to
         )
 
         # 打印最终准确率
+        insert_acc_str = f"{insert_acc:.4f} (n={len(insert_indices)})" if len(insert_indices) > 0 else "N/A (n=0)"
+        remove_acc_str = f"{remove_acc_after_finetune:.4f} (n={len(remove_indices)})" if len(remove_indices) > 0 else "N/A (n=0)"
         print(
-            f"    {model_prefix} -> Final accuracy - Train: {train_acc:.4f}, Test: {test_acc:.4f}, Insert: {insert_acc:.4f}, Remove: {remove_acc_after_finetune:.4f}")
+            f"    {model_prefix} -> Final accuracy - Train: {train_acc:.4f}, Test: {test_acc:.4f}, Insert: {insert_acc_str}, Remove: {remove_acc_str}")
 
         # 更新每个样本的状态历史（记录当前timestamp的状态）
         for i in range(total_samples):
@@ -685,7 +711,6 @@ def train_single_model(args, train_dataset, test_dataset, num_classes, trial, to
         f.write(f"{'Remove (1->0)':<30} {converted_stats[3]:<20} {converted_stats[3] / total_samples:.2f}\n")
     print(f"  {model_prefix} -> Saved main status statistics to {main_stats_file_path}")
 
-    # 8. 保存所有timestamp的打印信息
     log_file_path = f"{save_path}/timestamp_logs.txt"
     with open(log_file_path, 'w', encoding='utf-8') as f:
         f.write(f"{model_type.upper()} Model - Trial {trial} - Timestamp Logs\n")
@@ -695,11 +720,11 @@ def train_single_model(args, train_dataset, test_dataset, num_classes, trial, to
     print(f"  {model_prefix} -> Saved timestamp logs to {log_file_path}")
 
 
-def continuous_update_finetune(args):
+def continuous_update_finetune_mutiple_update(args):
     print("dataset and net_name:", args['dataset_name'], args['net_name'])
 
     # 参数控制
-    total_unlearn_steps = args.get('total_unlearn_steps', 80)
+    total_unlearn_steps = args.get('total_unlearn_steps', 200)
     update_proportion = args['proportion_of_group_unlearn']  # 0.1% 的数据更新比例
 
     print(f"  -> Total unlearn steps: {total_unlearn_steps}")
@@ -719,7 +744,7 @@ def continuous_update_finetune(args):
         print(f'\n========== The {t}-th trial ==========')
 
         # 训练target model
-        train_single_model(
+        train_single_model_mutiple_update(
             args=args,
             train_dataset=target_m,
             test_dataset=target_um,
@@ -730,7 +755,7 @@ def continuous_update_finetune(args):
         )
 
         # 训练shadow model
-        train_single_model(
+        train_single_model_mutiple_update(
             args=args,
             train_dataset=shadow_m,
             test_dataset=shadow_um,

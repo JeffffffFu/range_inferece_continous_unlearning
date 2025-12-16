@@ -199,6 +199,34 @@ class DNN(nn.Module):
             }
             max_length = max_length_map.get(self.args['dataset_name'], 128)
             return OPT13BModel_dropout(num_classes=out_dim, max_length=max_length, dropout_rate=0.95)
+        elif net_name == "gpt2":
+            # 根据数据集设置max_length
+            max_length_map = {
+                "sst5": 128,
+                "news20": 256,
+                "snli": 256,
+                "mnli": 256,
+                "mrpc": 256,
+                "imdb": 512,
+                "rte": 256,
+                "ag_news": 256,
+            }
+            max_length = max_length_map.get(self.args['dataset_name'], 128)
+            return GPT2SmallModel(num_classes=out_dim, max_length=max_length)
+        elif net_name == "gpt2_dropout":
+            # 根据数据集设置max_length
+            max_length_map = {
+                "sst5": 128,
+                "news20": 256,
+                "snli": 256,
+                "mnli": 256,
+                "mrpc": 256,
+                "imdb": 512,
+                "rte": 256,
+                "ag_news": 256,
+            }
+            max_length = max_length_map.get(self.args['dataset_name'], 128)
+            return GPT2SmallModel_dropout(num_classes=out_dim, max_length=max_length, dropout_rate=0.95)
 
         else:
             raise Exception("invalid net name")
@@ -906,7 +934,6 @@ class OPT13BModel_dropout(nn.Module):
         logits = self.dropout(outputs.logits)
         
         return logits
-    
     def get_tokenizer(self):
         return self.tokenizer
     
@@ -920,4 +947,118 @@ class OPT13BModel_dropout(nn.Module):
         self.model.config.hidden_dropout = dropout_rate
         self.model.config.attention_dropout = dropout_rate
         self.model.config.classifier_dropout = dropout_rate
+
+
+class GPT2SmallModel(nn.Module):
+    """GPT-2 Small模型包装器，用于文本分类任务"""
+    def __init__(self, num_classes=5, max_length=128, model_name="gpt2"):
+        super(GPT2SmallModel, self).__init__()
+        self.max_length = max_length
+        self.model_name = model_name
+        
+        self.model = AutoModelForSequenceClassification.from_pretrained(
+            model_name,
+            num_labels=num_classes,
+            ignore_mismatched_sizes=True,
+            use_safetensors=True
+        )
+        
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        # GPT-2 默认没有 pad_token，需要设置
+        if self.tokenizer.pad_token is None:
+            self.tokenizer.pad_token = self.tokenizer.eos_token
+        
+        self.model.config.pad_token_id = self.tokenizer.pad_token_id
+        
+    def forward(self, batch):
+        """
+        前向传播
+        Args:
+            batch: 包含input_ids, attention_mask的字典或张量
+        """
+        if isinstance(batch, dict):
+            input_ids = batch['input_ids']
+            attention_mask = batch['attention_mask']
+        else:
+            # 如果输入是张量，假设是input_ids
+            input_ids = batch
+            attention_mask = torch.ones_like(input_ids)
+        
+        device = next(self.parameters()).device
+        input_ids = input_ids.to(device)
+        attention_mask = attention_mask.to(device)
+        
+        outputs = self.model(
+            input_ids=input_ids,
+            attention_mask=attention_mask
+        )
+        
+        return outputs.logits
     
+    def get_tokenizer(self):
+        return self.tokenizer
+    
+    def get_model_name(self):
+        return self.model_name
+
+
+class GPT2SmallModel_dropout(nn.Module):
+    """GPT-2 Small模型包装器（带dropout），用于文本分类任务"""
+    def __init__(self, num_classes=5, max_length=128, model_name="gpt2", dropout_rate=0.95):
+        super(GPT2SmallModel_dropout, self).__init__()
+        self.max_length = max_length
+        self.model_name = model_name
+        self.dropout_rate = dropout_rate
+        
+        self.model = AutoModelForSequenceClassification.from_pretrained(
+            model_name,
+            num_labels=num_classes,
+            ignore_mismatched_sizes=True,
+            use_safetensors=True
+        )
+        
+        self.dropout = nn.Dropout(dropout_rate)
+        
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        # GPT-2 默认没有 pad_token，需要设置
+        if self.tokenizer.pad_token is None:
+            self.tokenizer.pad_token = self.tokenizer.eos_token
+        
+        self.model.config.pad_token_id = self.tokenizer.pad_token_id
+        
+    def forward(self, batch):
+        if isinstance(batch, dict):
+            input_ids = batch['input_ids']
+            attention_mask = batch['attention_mask']
+        else:
+            input_ids = batch
+            attention_mask = torch.ones_like(input_ids)
+        
+        device = next(self.parameters()).device
+        input_ids = input_ids.to(device)
+        attention_mask = attention_mask.to(device)
+        
+        outputs = self.model(
+            input_ids=input_ids,
+            attention_mask=attention_mask
+        )
+        
+        logits = self.dropout(outputs.logits)
+        
+        return logits
+    
+    def get_tokenizer(self):
+        return self.tokenizer
+    
+    def get_model_name(self):
+        return self.model_name
+    
+    def set_dropout_rate(self, dropout_rate):
+        """动态设置dropout率"""
+        self.dropout_rate = dropout_rate
+        self.dropout.p = dropout_rate
+        # GPT-2 使用不同的配置参数名称，主要依赖额外的 dropout 层
+        if hasattr(self.model.config, 'resid_pdrop'):
+            self.model.config.resid_pdrop = dropout_rate
+        if hasattr(self.model.config, 'attn_pdrop'):
+            self.model.config.attn_pdrop = dropout_rate

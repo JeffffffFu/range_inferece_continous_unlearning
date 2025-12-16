@@ -23,7 +23,7 @@ def continuous_unlearn_sparsity(args):
     print(f"  -> Add data A at step: {add_data_A_step}")
     print(f"  -> Forget data A at step: {forget_data_A_step}")
 
-    train_data, test_data = get_data(args['dataset_name'])
+    train_data, test_data = get_data(args['dataset_name'], model_name=args.get('net_name'))
 
     target_m, shadow_m, shadow_um = split_dataset(train_data, args['random'])
     target_m = train_data
